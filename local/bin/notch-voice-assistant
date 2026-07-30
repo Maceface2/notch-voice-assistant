@@ -2,14 +2,25 @@
 
 set -euo pipefail
 
-readonly PACKAGE_ROOT="/home/masono/.local/lib"
-readonly VENV_PYTHON="/home/masono/.local/share/notch-voice-assistant/venv/bin/python"
+readonly DATA_ROOT="${XDG_DATA_HOME:-${HOME}/.local/share}"
+readonly PACKAGE_ROOT="${NOTCH_VOICE_PACKAGE_ROOT:-${HOME}/.local/lib}"
+readonly VENV_PYTHON="${DATA_ROOT}/notch-voice-assistant/venv/bin/python"
 
 if [[ -x "$VENV_PYTHON" ]]; then
     VENV_SITE="$("$VENV_PYTHON" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
     readonly VENV_SITE
+    library_paths=()
+    for library_path in \
+        "${VENV_SITE}/nvidia/cublas/lib" \
+        "${VENV_SITE}/nvidia/cudnn/lib" \
+        "${VENV_SITE}/nvidia/cuda_nvrtc/lib"; do
+        [[ -d "$library_path" ]] && library_paths+=("$library_path")
+    done
     export PYTHONPATH="${PACKAGE_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
-    export LD_LIBRARY_PATH="${VENV_SITE}/nvidia/cublas/lib:${VENV_SITE}/nvidia/cudnn/lib:${VENV_SITE}/nvidia/cuda_nvrtc/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+    if (( ${#library_paths[@]} > 0 )); then
+        joined_library_paths="$(IFS=:; printf '%s' "${library_paths[*]}")"
+        export LD_LIBRARY_PATH="${joined_library_paths}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+    fi
     exec "$VENV_PYTHON" -m notch_voice_assistant.cli "${1:-toggle}"
 fi
 

@@ -3,9 +3,10 @@
 An on-demand Claude voice assistant that lives in the center notch of a
 Waybar/Niri desktop.
 
-This repository currently captures the working first prototype from Mason's
-Nobara workstation. Clicking the Waybar microphone opens a top-center GTK
-layer-shell popover and starts a conversational loop:
+The [`prototype-v0`](https://github.com/Maceface2/notch-voice-assistant/tree/prototype-v0)
+tag captures the original working Nobara workstation prototype. The main
+branch is the portable first iteration. Clicking the Waybar microphone opens a
+top-center GTK layer-shell popover and starts a conversational loop:
 
 1. PipeWire records speech into memory.
 2. faster-whisper transcribes locally.
@@ -41,60 +42,42 @@ disk.
 | Speaker button | Mute or unmute speech |
 | **New** | Clear the transcript and begin a new session |
 
-## Current target
+## Requirements
 
-The prototype is configured for:
-
-- Nobara Linux with Niri and Waybar
+- A Wayland compositor and Waybar; the current UI is tested with Niri
 - PipeWire
-- Python 3.14 with GTK 3 and GStreamer introspection bindings
-- NVIDIA CUDA acceleration
-- Claude Code installed at `~/.local/bin/claude`
+- Python 3 with GTK 3, GTK layer-shell, and GStreamer introspection bindings
+- `ffmpeg`, `aplay`, and optionally `espeak-ng`
+- Claude Code available on `PATH` or at `~/.local/bin/claude`
+- Optional NVIDIA CUDA acceleration
 
-The launcher and service intentionally preserve the absolute paths from the
-working workstation snapshot. Making installation portable is an iteration-one
-task.
+Distribution packages provide the GTK, layer-shell, GStreamer, and PipeWire
+bindings. The Python speech stack and models are installed in a user-local
+virtual environment.
 
-## Prototype installation
+## Installation
 
-Install the tracked files:
-
-```sh
-mkdir -p ~/.local/lib ~/.local/bin ~/.config/notch-voice-assistant \
-  ~/.config/systemd/user
-cp -r local/lib/notch_voice_assistant ~/.local/lib/
-cp local/bin/notch-voice-assistant ~/.local/bin/
-cp config/notch-voice-assistant/style.css ~/.config/notch-voice-assistant/
-cp config/systemd/user/notch-voice-assistant.service ~/.config/systemd/user/
-chmod +x ~/.local/bin/notch-voice-assistant
-```
-
-Create the user-local speech environment and preload the models:
+Clone the repository and run the installer:
 
 ```sh
-python3 -m venv --system-site-packages \
-  ~/.local/share/notch-voice-assistant/venv
-~/.local/share/notch-voice-assistant/venv/bin/pip install \
-  'piper-tts==1.5.0' \
-  'faster-whisper==1.2.1' \
-  'webrtcvad-wheels==2.0.14' \
-  'nvidia-cublas-cu12' \
-  'nvidia-cudnn-cu12==9.*'
-~/.local/share/notch-voice-assistant/venv/bin/hf download \
-  Systran/faster-distil-whisper-large-v3 \
-  --cache-dir ~/.local/share/notch-voice-assistant/models/huggingface
-~/.local/share/notch-voice-assistant/venv/bin/hf download \
-  Systran/faster-whisper-small.en \
-  --cache-dir ~/.local/share/notch-voice-assistant/models/huggingface
-~/.local/share/notch-voice-assistant/venv/bin/python \
-  -m piper.download_voices \
-  --data-dir ~/.local/share/notch-voice-assistant/models \
-  en_US-lessac-medium
-systemctl --user daemon-reload
+git clone https://github.com/Maceface2/notch-voice-assistant.git
+cd notch-voice-assistant
+./install.sh
 ```
+
+Use `./install.sh --cpu-only` to skip the NVIDIA Python runtime and pin Whisper
+to its CPU backend. `./install.sh --app-only` updates just the application
+files without recreating or downloading the speech environment.
 
 Merge the snippets under [`integrations/waybar`](integrations/waybar) into the
 Waybar configuration and stylesheet, then reload Waybar.
+
+The service is not enabled at login. The first Waybar click starts it, and it
+exits after ten hidden-idle minutes.
+
+Whisper backend selection defaults to automatic CUDA with a runtime CPU
+fallback. It can also be overridden per launch with
+`NOTCH_VOICE_WHISPER_DEVICE=cpu` or `NOTCH_VOICE_WHISPER_DEVICE=cuda`.
 
 ## Verification
 
@@ -103,17 +86,24 @@ Waybar configuration and stylesheet, then reload Waybar.
 PYTHONPATH=local/lib \
   ~/.local/share/notch-voice-assistant/venv/bin/python \
   -m unittest discover -s tests -v
-systemd-analyze --user verify \
-  ~/.config/systemd/user/notch-voice-assistant.service
+systemd-analyze --user verify ~/.config/systemd/user/notch-voice-assistant.service
 ```
 
-The user service is not enabled at login. The first Waybar click starts it.
+## Uninstallation
 
-## Iteration-one direction
+```sh
+./uninstall.sh
+```
 
-- Replace workstation-specific paths with runtime discovery
-- Add a repeatable installer and uninstaller
-- Formalize Python packaging and dependency metadata
-- Improve first-run model setup and GPU/CPU selection
-- Add barge-in so speaking can be interrupted naturally
-- Expand state-machine and failure-path tests
+This preserves downloaded models, the virtual environment, and session state.
+Use `./uninstall.sh --purge-data` to remove those as well. Waybar snippets are
+always left for manual removal.
+
+## Iteration status
+
+- [x] Replace workstation-specific paths with runtime discovery
+- [x] Add a repeatable installer and conservative uninstaller
+- [x] Improve model setup and GPU/CPU fallback behavior
+- [ ] Formalize Python packaging and dependency metadata
+- [ ] Add barge-in so speaking can be interrupted naturally
+- [ ] Expand state-machine and failure-path tests

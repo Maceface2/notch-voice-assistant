@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .state import (
     CLAUDE_BIN,
+    CONFIG_ROOT,
     MODELS_DIR,
     SOCKET_PATH,
     VENV_DIR,
@@ -71,9 +72,7 @@ def doctor() -> int:
         "Piper voice": (MODELS_DIR / "en_US-lessac-medium.onnx").is_file(),
         "aplay": _command_exists("aplay"),
         "eSpeak fallback": _command_exists("espeak-ng"),
-        "User service": (
-            Path("/home/masono/.config/systemd/user") / SERVICE_NAME
-        ).is_file(),
+        "User service": (CONFIG_ROOT / "systemd/user" / SERVICE_NAME).is_file(),
     }
     for label, available in checks.items():
         print(f"{'OK' if available else 'MISSING':7} {label}")

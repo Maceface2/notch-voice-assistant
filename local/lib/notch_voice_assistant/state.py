@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -11,7 +12,8 @@ from typing import Any
 
 
 APP_NAME = "notch-voice-assistant"
-HOME_DIR = Path("/home/masono")
+HOME_DIR = Path.home()
+CONFIG_ROOT = Path(os.environ.get("XDG_CONFIG_HOME", HOME_DIR / ".config"))
 RUNTIME_ROOT = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
 RUNTIME_DIR = RUNTIME_ROOT / APP_NAME
 SOCKET_PATH = RUNTIME_DIR / "control.sock"
@@ -21,8 +23,14 @@ SESSION_PATH = STATE_DIR / "session.json"
 DATA_DIR = Path(os.environ.get("XDG_DATA_HOME", HOME_DIR / ".local/share")) / APP_NAME
 MODELS_DIR = DATA_DIR / "models"
 VENV_DIR = DATA_DIR / "venv"
-STYLE_PATH = Path("/home/masono/.config/notch-voice-assistant/style.css")
-CLAUDE_BIN = Path("/home/masono/.local/bin/claude")
+STYLE_PATH = CONFIG_ROOT / APP_NAME / "style.css"
+WHISPER_DEVICE_PATH = CONFIG_ROOT / APP_NAME / "whisper-device"
+CLAUDE_BIN = Path(
+    os.environ.get(
+        "NOTCH_VOICE_CLAUDE_BIN",
+        shutil.which("claude") or HOME_DIR / ".local/bin/claude",
+    )
+)
 
 
 class AssistantState(StrEnum):

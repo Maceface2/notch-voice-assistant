@@ -1,9 +1,9 @@
 // Add "custom/voice-assistant" to modules-center, then merge this module:
 "custom/voice-assistant": {
-  "exec": "/home/masono/.local/bin/notch-voice-assistant status",
+  "exec": "$HOME/.local/bin/notch-voice-assistant status",
   "return-type": "json",
   "interval": 1,
-  "on-click": "/home/masono/.local/bin/notch-voice-assistant toggle",
-  "on-click-right": "/home/masono/.local/bin/notch-voice-assistant stop",
-  "on-click-middle": "/home/masono/.local/bin/notch-voice-assistant new-session"
+  "on-click": "$HOME/.local/bin/notch-voice-assistant toggle",
+  "on-click-right": "$HOME/.local/bin/notch-voice-assistant stop",
+  "on-click-middle": "$HOME/.local/bin/notch-voice-assistant new-session"
 }

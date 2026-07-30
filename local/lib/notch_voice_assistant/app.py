@@ -14,6 +14,7 @@ from .claude import ClaudeResult, ClaudeRunner, friendly_tool_status, sanitize_f
 from .state import (
     AssistantState,
     CLAUDE_BIN,
+    HOME_DIR,
     SESSION_PATH,
     SOCKET_PATH,
     STATUS_PATH,
@@ -484,7 +485,7 @@ class VoiceAssistantApplication:
                 "--resume",
                 session_id,
             ],
-            cwd="/home/masono",
+            cwd=HOME_DIR,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )

@@ -18,8 +18,10 @@ from notch_voice_assistant.claude import (  # noqa: E402
     friendly_tool_status,
     sanitize_for_speech,
 )
+from notch_voice_assistant.audio import SpeechServices  # noqa: E402
 from notch_voice_assistant.state import (  # noqa: E402
     AssistantState,
+    HOME_DIR,
     SessionPreferences,
     status_payload,
 )
@@ -44,6 +46,9 @@ class SpeechSanitizerTests(unittest.TestCase):
 
 
 class StatusTests(unittest.TestCase):
+    def test_home_directory_is_discovered_at_runtime(self) -> None:
+        self.assertEqual(HOME_DIR, Path.home())
+
     def test_waybar_status_contains_state_and_visibility_classes(self) -> None:
         payload = status_payload(
             AssistantState.LISTENING,
@@ -78,6 +83,42 @@ class StatusTests(unittest.TestCase):
         self.assertTrue(preferences.muted)
         self.assertEqual(len(preferences.messages), 12)
         self.assertEqual(preferences.messages[0]["text"], "8")
+
+
+class SpeechServiceTests(unittest.TestCase):
+    def test_whisper_device_can_be_forced_with_environment(self) -> None:
+        with mock.patch.dict(os.environ, {"NOTCH_VOICE_WHISPER_DEVICE": "cpu"}):
+            self.assertEqual(SpeechServices._read_whisper_device_preference(), "cpu")
+
+    def test_cuda_inference_failure_retries_on_cpu(self) -> None:
+        class FailingCudaModel:
+            def transcribe(self, *_args, **_kwargs):
+                raise RuntimeError("libcublas unavailable")
+
+        class Segment:
+            text = "CPU fallback worked."
+
+        class CpuModel:
+            def transcribe(self, *_args, **_kwargs):
+                return iter([Segment()]), object()
+
+        speech = SpeechServices.__new__(SpeechServices)
+        speech.whisper_model = FailingCudaModel()
+        speech.whisper_backend = "CUDA · distil-large-v3"
+        speech.whisper_device_preference = "auto"
+
+        def load_cpu(*, force_cpu: bool = False) -> None:
+            if not force_cpu:
+                return
+            speech.whisper_model = CpuModel()
+            speech.whisper_backend = "CPU fallback · small.en"
+
+        with mock.patch.object(speech, "_load_whisper", side_effect=load_cpu) as loader:
+            transcript = speech.transcribe(b"\0\0" * 100)
+
+        loader.assert_any_call(force_cpu=True)
+        self.assertEqual(transcript, "CPU fallback worked.")
+        self.assertEqual(speech.whisper_backend, "CPU fallback · small.en")
 
 
 class ClaudeRunnerTests(unittest.TestCase):

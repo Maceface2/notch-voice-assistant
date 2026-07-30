@@ -11,7 +11,7 @@ from typing import Callable
 
 import numpy as np
 
-from .state import MODELS_DIR
+from .state import MODELS_DIR, WHISPER_DEVICE_PATH
 
 
 SAMPLE_RATE = 16_000
@@ -175,9 +175,20 @@ class SpeechServices:
         self._model_lock = threading.Lock()
         self._speech_lock = threading.Lock()
         self._playback_process: subprocess.Popen[bytes] | None = None
+        self.whisper_device_preference = self._read_whisper_device_preference()
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-    def _load_whisper(self) -> None:
+    @staticmethod
+    def _read_whisper_device_preference() -> str:
+        preference = os.environ.get("NOTCH_VOICE_WHISPER_DEVICE", "").strip().lower()
+        if not preference:
+            try:
+                preference = WHISPER_DEVICE_PATH.read_text(encoding="utf-8").strip().lower()
+            except OSError:
+                preference = "auto"
+        return preference if preference in {"auto", "cpu", "cuda"} else "auto"
+
+    def _load_whisper(self, *, force_cpu: bool = False) -> None:
         if self.whisper_model is not None:
             return
         with self._model_lock:
@@ -190,35 +201,55 @@ class SpeechServices:
                     "Install python3-faster-whisper to enable local transcription."
                 ) from error
 
-            try:
-                self.whisper_model = WhisperModel(
-                    "distil-large-v3",
-                    device="cuda",
-                    compute_type="int8_float16",
-                    download_root=str(MODELS_DIR),
-                )
-                self.whisper_backend = "CUDA · distil-large-v3"
-            except Exception:
-                self.whisper_model = WhisperModel(
-                    "small.en",
-                    device="cpu",
-                    compute_type="int8",
-                    download_root=str(MODELS_DIR),
-                )
-                self.whisper_backend = "CPU fallback · small.en"
+            use_cuda = not force_cpu and self.whisper_device_preference != "cpu"
+            if use_cuda:
+                try:
+                    self.whisper_model = WhisperModel(
+                        "distil-large-v3",
+                        device="cuda",
+                        compute_type="int8_float16",
+                        download_root=str(MODELS_DIR),
+                    )
+                    self.whisper_backend = "CUDA · distil-large-v3"
+                    return
+                except Exception:
+                    if self.whisper_device_preference == "cuda":
+                        raise
+
+            self.whisper_model = WhisperModel(
+                "small.en",
+                device="cpu",
+                compute_type="int8",
+                download_root=str(MODELS_DIR),
+            )
+            self.whisper_backend = "CPU fallback · small.en"
 
     def transcribe(self, pcm_bytes: bytes) -> str:
         if not pcm_bytes:
             return ""
         self._load_whisper()
         audio = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
-        segments, _info = self.whisper_model.transcribe(
-            audio,
-            language="en",
-            beam_size=5,
-            vad_filter=False,
-            condition_on_previous_text=False,
-        )
+        try:
+            segments, _info = self.whisper_model.transcribe(
+                audio,
+                language="en",
+                beam_size=5,
+                vad_filter=False,
+                condition_on_previous_text=False,
+            )
+            segments = list(segments)
+        except Exception:
+            if not self.whisper_backend.startswith("CUDA") or self.whisper_device_preference == "cuda":
+                raise
+            self.whisper_model = None
+            self._load_whisper(force_cpu=True)
+            segments, _info = self.whisper_model.transcribe(
+                audio,
+                language="en",
+                beam_size=5,
+                vad_filter=False,
+                condition_on_previous_text=False,
+            )
         return " ".join(segment.text.strip() for segment in segments).strip()
 
     def _load_piper(self) -> None:

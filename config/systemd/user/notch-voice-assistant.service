@@ -5,7 +5,7 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/home/masono/.local/bin/notch-voice-assistant daemon
+ExecStart=%h/.local/bin/notch-voice-assistant daemon
 Restart=no
 TimeoutStopSec=6
 
