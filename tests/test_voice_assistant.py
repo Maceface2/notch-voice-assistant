@@ -6,6 +6,8 @@ import stat
 import sys
 import tempfile
 import unittest
+import wave
+from io import BytesIO
 from pathlib import Path
 from unittest import mock
 
@@ -19,6 +21,8 @@ from notch_voice_assistant.claude import (  # noqa: E402
     sanitize_for_speech,
 )
 from notch_voice_assistant.audio import SpeechServices  # noqa: E402
+from notch_voice_assistant.coqui import CoquiSynthesizer  # noqa: E402
+from notch_voice_assistant.coqui_worker import samples_to_wav  # noqa: E402
 from notch_voice_assistant.state import (  # noqa: E402
     AssistantState,
     HOME_DIR,
@@ -56,6 +60,7 @@ class StatusTests(unittest.TestCase):
             visible=True,
         )
         self.assertEqual(payload["state"], "listening")
+        self.assertEqual(payload["text"], "AI")
         self.assertEqual(payload["class"], ["listening", "open"])
         self.assertIn("Click to toggle", payload["tooltip"])
 
@@ -86,6 +91,18 @@ class StatusTests(unittest.TestCase):
 
 
 class SpeechServiceTests(unittest.TestCase):
+    def test_coqui_worker_discovers_the_python_package_root(self) -> None:
+        package_root = CoquiSynthesizer._package_root()
+        self.assertTrue((package_root / "notch_voice_assistant/coqui_worker.py").is_file())
+
+    def test_coqui_samples_are_encoded_as_mono_pcm_wav(self) -> None:
+        wav_bytes = samples_to_wav([0.0, 0.5, -0.5], 22_050)
+        with wave.open(BytesIO(wav_bytes), "rb") as wav_file:
+            self.assertEqual(wav_file.getnchannels(), 1)
+            self.assertEqual(wav_file.getsampwidth(), 2)
+            self.assertEqual(wav_file.getframerate(), 22_050)
+            self.assertEqual(wav_file.getnframes(), 3)
+
     def test_whisper_device_can_be_forced_with_environment(self) -> None:
         with mock.patch.dict(os.environ, {"NOTCH_VOICE_WHISPER_DEVICE": "cpu"}):
             self.assertEqual(SpeechServices._read_whisper_device_preference(), "cpu")

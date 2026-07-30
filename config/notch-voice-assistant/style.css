@@ -5,17 +5,32 @@ window#notch-voice-assistant {
   font-size: 14px;
 }
 
+.assistant-shell {
+  background: transparent;
+}
+
+.notch-connector {
+  background: #050505;
+  border-radius: 0 0 7px 7px;
+}
+
 .assistant-card {
   background: #050505;
   border-radius: 0 0 18px 18px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-top: none;
   padding: 16px 18px 18px;
-  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.65);
+  box-shadow: none;
 }
 
 .assistant-header {
   min-height: 34px;
+}
+
+.anthropic-icon {
+  margin-right: 2px;
+  min-width: 22px;
+  font-weight: 800;
 }
 
 .status-label {

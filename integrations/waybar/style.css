@@ -1,43 +1,50 @@
 #custom-voice-assistant {
   border-radius: 999px;
   margin: 0 4px;
-  padding: 2px 11px 2px 9px;
-  color: rgba(255, 255, 255, 0.72);
-  background-color: rgba(255, 255, 255, 0.08);
+  padding: 2px 10px;
+  min-width: 18px;
+  color: transparent;
+  background-color: #050505;
+  background-image: url("anthropic.png");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 18px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
 }
 
 #custom-voice-assistant.active {
-  color: #000;
-  background-color: @accent_color;
+  background-color: #050505;
+  border-color: #faf9f5;
 }
 
 #custom-voice-assistant.listening {
-  color: #fff;
-  background-color: #d94a58;
+  background-color: #050505;
+  border-color: #ff5f6d;
 }
 
 #custom-voice-assistant.transcribing {
-  color: #000;
-  background-color: #ffbd5a;
+  background-color: #050505;
+  border-color: #ffbd5a;
 }
 
 #custom-voice-assistant.thinking,
 #custom-voice-assistant.acting {
-  color: #000;
-  background-color: #89b4fa;
+  background-color: #050505;
+  border-color: #6a9bcc;
 }
 
 #custom-voice-assistant.speaking {
-  color: #000;
-  background-color: #72e1a1;
+  background-color: #050505;
+  border-color: #788c5d;
 }
 
 #custom-voice-assistant.error {
-  color: #fff;
-  background-color: #d94a58;
+  background-color: #050505;
+  border-color: #d97757;
 }
 
 #custom-voice-assistant:hover {
-  color: #000;
-  background-color: @accent_color;
+  color: transparent;
+  background-color: #050505;
+  border-color: #d97757;
 }

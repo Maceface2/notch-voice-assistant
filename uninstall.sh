@@ -39,6 +39,8 @@ systemctl --user stop "${APP_NAME}.service" 2>/dev/null || true
 rm -f -- \
     "${USER_HOME}/.local/bin/${APP_NAME}" \
     "${CONFIG_HOME}/${APP_NAME}/style.css" \
+    "${CONFIG_HOME}/${APP_NAME}/anthropic.png" \
+    "${CONFIG_HOME}/waybar/anthropic.png" \
     "${CONFIG_HOME}/${APP_NAME}/whisper-device" \
     "${CONFIG_HOME}/systemd/user/${APP_NAME}.service"
 rmdir -- "${CONFIG_HOME}/${APP_NAME}" 2>/dev/null || true

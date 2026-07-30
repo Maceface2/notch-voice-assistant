@@ -12,6 +12,8 @@ from pathlib import Path
 
 from .state import (
     CLAUDE_BIN,
+    COQUI_PYTHON,
+    COQUI_READY_PATH,
     CONFIG_ROOT,
     MODELS_DIR,
     SOCKET_PATH,
@@ -26,7 +28,7 @@ SERVICE_NAME = "notch-voice-assistant.service"
 def print_waybar_status() -> int:
     status = read_status()
     output = {
-        "text": status.get("text", "󰚩"),
+        "text": status.get("text", "AI"),
         "class": status.get("class", ["idle", "closed"]),
         "tooltip": status.get("tooltip", "Claude voice assistant\nClick to open"),
     }
@@ -68,8 +70,8 @@ def doctor() -> int:
         "GStreamer": _gi_available("Gst", "1.0"),
         "faster-whisper": importlib.util.find_spec("faster_whisper") is not None,
         "WebRTC VAD": importlib.util.find_spec("webrtcvad") is not None,
-        "Piper": importlib.util.find_spec("piper") is not None,
-        "Piper voice": (MODELS_DIR / "en_US-lessac-medium.onnx").is_file(),
+        "Coqui Python 3.11": COQUI_PYTHON.is_file() and os.access(COQUI_PYTHON, os.X_OK),
+        "Coqui American voice": COQUI_READY_PATH.is_file(),
         "aplay": _command_exists("aplay"),
         "eSpeak fallback": _command_exists("espeak-ng"),
         "User service": (CONFIG_ROOT / "systemd/user" / SERVICE_NAME).is_file(),

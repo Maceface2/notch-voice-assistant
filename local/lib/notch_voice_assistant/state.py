@@ -23,7 +23,12 @@ SESSION_PATH = STATE_DIR / "session.json"
 DATA_DIR = Path(os.environ.get("XDG_DATA_HOME", HOME_DIR / ".local/share")) / APP_NAME
 MODELS_DIR = DATA_DIR / "models"
 VENV_DIR = DATA_DIR / "venv"
+COQUI_VENV_DIR = DATA_DIR / "coqui-venv"
+COQUI_PYTHON = COQUI_VENV_DIR / "bin/python"
+COQUI_MODEL_DIR = MODELS_DIR / "coqui"
+COQUI_READY_PATH = DATA_DIR / "coqui-ready.json"
 STYLE_PATH = CONFIG_ROOT / APP_NAME / "style.css"
+ICON_PATH = CONFIG_ROOT / APP_NAME / "anthropic.png"
 WHISPER_DEVICE_PATH = CONFIG_ROOT / APP_NAME / "whisper-device"
 CLAUDE_BIN = Path(
     os.environ.get(
@@ -140,7 +145,7 @@ def status_payload(
         tooltip_lines.append(degraded)
     tooltip_lines.append("Click to toggle")
     return {
-        "text": "󰚩",
+        "text": "AI",
         "class": [state.value, "open" if visible else "closed"],
         "tooltip": "\n".join(tooltip_lines),
         "state": state.value,

@@ -210,6 +210,22 @@ class ClaudeRunner:
     def cancel(self) -> None:
         with self._lock:
             process = self._process
+        self._cancel_process(process)
+
+    def cancel_in_background(self) -> None:
+        with self._lock:
+            process = self._process
+        if not process or process.poll() is not None:
+            return
+        threading.Thread(
+            target=self._cancel_process,
+            args=(process,),
+            name="claude-cancel",
+            daemon=True,
+        ).start()
+
+    @staticmethod
+    def _cancel_process(process: subprocess.Popen[str] | None) -> None:
         if not process or process.poll() is not None:
             return
         try:
@@ -222,7 +238,10 @@ class ClaudeRunner:
             except (ProcessLookupError, subprocess.TimeoutExpired):
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=1)
                 except ProcessLookupError:
+                    pass
+                except subprocess.TimeoutExpired:
                     pass
         except ProcessLookupError:
             pass

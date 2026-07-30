@@ -15,6 +15,7 @@ from .state import (
     AssistantState,
     CLAUDE_BIN,
     HOME_DIR,
+    ICON_PATH,
     SESSION_PATH,
     SOCKET_PATH,
     STATUS_PATH,
@@ -27,11 +28,12 @@ from .state import (
 
 
 class VoiceAssistantApplication:
+    ANIMATION_MS = 240
     IDLE_EXIT_SECONDS = 600
     TOOL_SPEECH_INTERVAL = 8
 
     def __init__(self) -> None:
-        self.Gtk, self.GLib, self.GtkLayerShell = self._load_gtk()
+        self.Gtk, self.GLib, self.GtkLayerShell, self.GdkPixbuf = self._load_gtk()
         self.preferences = SessionPreferences.load()
         self.claude = ClaudeRunner()
         self.speech = SpeechServices()
@@ -44,6 +46,7 @@ class VoiceAssistantApplication:
         self.last_activity = time.monotonic()
         self.last_tool_spoken_at = 0.0
         self.current_reply = ""
+        self.animation_generation = 0
         self.control_socket: socket.socket | None = None
         self.control_thread: threading.Thread | None = None
         self._build_window()
@@ -54,9 +57,10 @@ class VoiceAssistantApplication:
 
         gi.require_version("Gtk", "3.0")
         gi.require_version("GtkLayerShell", "0.1")
-        from gi.repository import GLib, Gtk, GtkLayerShell
+        gi.require_version("GdkPixbuf", "2.0")
+        from gi.repository import GdkPixbuf, GLib, Gtk, GtkLayerShell
 
-        return Gtk, GLib, GtkLayerShell
+        return Gtk, GLib, GtkLayerShell, GdkPixbuf
 
     def _build_window(self) -> None:
         Gtk = self.Gtk
@@ -67,8 +71,7 @@ class VoiceAssistantApplication:
         self.window.set_title("Claude Voice Assistant")
         self.window.set_decorated(False)
         self.window.set_resizable(False)
-        self.window.set_default_size(640, 480)
-        self.window.set_size_request(640, 380)
+        self.window.set_size_request(640, -1)
         self.window.connect("delete-event", self._on_delete)
         self.window.connect("key-press-event", self._on_key_press)
 
@@ -76,19 +79,54 @@ class VoiceAssistantApplication:
         layer_shell.set_namespace(self.window, "notch-voice-assistant")
         layer_shell.set_layer(self.window, layer_shell.Layer.OVERLAY)
         layer_shell.set_anchor(self.window, layer_shell.Edge.TOP, True)
-        layer_shell.set_margin(self.window, layer_shell.Edge.TOP, 39)
+        # Pull into Waybar's transparent bottom margin so the connector
+        # visually grows from the notch. Other bar geometries can override it.
+        try:
+            top_offset = int(os.environ.get("NOTCH_VOICE_TOP_OFFSET", "-8"))
+        except ValueError:
+            top_offset = -8
+        layer_shell.set_margin(self.window, layer_shell.Edge.TOP, top_offset)
         layer_shell.set_keyboard_mode(self.window, layer_shell.KeyboardMode.ON_DEMAND)
         layer_shell.set_exclusive_zone(self.window, 0)
 
         self._load_css()
 
+        shell = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        shell.get_style_context().add_class("assistant-shell")
+        self.window.add(shell)
+
+        connector = Gtk.Box()
+        connector.set_size_request(56, 9)
+        connector.set_halign(Gtk.Align.CENTER)
+        connector.get_style_context().add_class("notch-connector")
+        shell.pack_start(connector, False, False, 0)
+
+        self.revealer = Gtk.Revealer()
+        self.revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
+        self.revealer.set_transition_duration(self.ANIMATION_MS)
+        self.revealer.set_reveal_child(False)
+        shell.pack_start(self.revealer, True, True, 0)
+
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         root.get_style_context().add_class("assistant-card")
-        self.window.add(root)
+        self.revealer.add(root)
 
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         header.get_style_context().add_class("assistant-header")
         root.pack_start(header, False, False, 0)
+
+        if ICON_PATH.is_file():
+            brand_pixbuf = self.GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                str(ICON_PATH),
+                22,
+                22,
+                True,
+            )
+            brand_icon = Gtk.Image.new_from_pixbuf(brand_pixbuf)
+        else:
+            brand_icon = Gtk.Label(label="AI")
+        brand_icon.get_style_context().add_class("anthropic-icon")
+        header.pack_start(brand_icon, False, False, 0)
 
         self.status_dot = Gtk.Label(label="●")
         self.status_dot.get_style_context().add_class("status-dot")
@@ -215,10 +253,13 @@ class VoiceAssistantApplication:
 
     def handle_command(self, command: str) -> bool:
         self.last_activity = time.monotonic()
-        if command in {"toggle", "open"}:
-            if self.window.get_visible():
+        if command == "toggle":
+            if self.window.get_visible() and self.revealer.get_reveal_child():
                 self.stop_and_hide()
             else:
+                self.show_and_listen()
+        elif command == "open":
+            if not self.window.get_visible() or not self.revealer.get_reveal_child():
                 self.show_and_listen()
         elif command == "stop":
             self.stop_loop()
@@ -229,13 +270,36 @@ class VoiceAssistantApplication:
         return False
 
     def show_and_listen(self) -> None:
+        self.animation_generation += 1
+        animation_generation = self.animation_generation
         self.loop_active = True
         self.continue_button.hide()
+        self.revealer.set_reveal_child(False)
         self.window.show_all()
         self.continue_button.hide()
         self.window.present()
-        self._write_status()
-        self.start_listening()
+        self.GLib.idle_add(self._reveal_from_notch, animation_generation)
+        self.GLib.timeout_add(
+            self.ANIMATION_MS // 2,
+            self._listen_after_reveal,
+            animation_generation,
+        )
+
+    def _reveal_from_notch(self, animation_generation: int) -> bool:
+        if animation_generation == self.animation_generation:
+            self.revealer.set_reveal_child(True)
+            self._write_status()
+        return False
+
+    def _listen_after_reveal(self, animation_generation: int) -> bool:
+        if (
+            animation_generation == self.animation_generation
+            and self.window.get_visible()
+            and self.revealer.get_reveal_child()
+            and self.loop_active
+        ):
+            self.start_listening()
+        return False
 
     def start_listening(self) -> None:
         if not self.loop_active:
@@ -409,7 +473,12 @@ class VoiceAssistantApplication:
         return False
 
     def _resume_after_speech(self, generation: int) -> bool:
-        if generation == self.generation and self.loop_active and self.window.get_visible():
+        if (
+            generation == self.generation
+            and self.loop_active
+            and self.window.get_visible()
+            and self.revealer.get_reveal_child()
+        ):
             self.start_listening()
         return False
 
@@ -446,14 +515,30 @@ class VoiceAssistantApplication:
             recorder = self.recorder
             self.recorder = None
             recorder.finish(submit=False)
-        self.claude.cancel()
+        self.claude.cancel_in_background()
         self.speech.stop_playback()
         self._set_state(AssistantState.IDLE, "Stopped")
 
     def stop_and_hide(self) -> None:
         self.stop_loop()
-        self.window.hide()
+        self.animation_generation += 1
+        animation_generation = self.animation_generation
+        self.revealer.set_reveal_child(False)
         self._write_status()
+        self.GLib.timeout_add(
+            self.ANIMATION_MS + 40,
+            self._finish_hide,
+            animation_generation,
+        )
+
+    def _finish_hide(self, animation_generation: int) -> bool:
+        if (
+            animation_generation == self.animation_generation
+            and not self.revealer.get_reveal_child()
+        ):
+            self.window.hide()
+            self._write_status()
+        return False
 
     def new_session(self) -> None:
         self.stop_loop()
@@ -462,7 +547,7 @@ class VoiceAssistantApplication:
         self.continue_button.hide()
         self._render_transcript()
         self._set_state(AssistantState.IDLE, "New conversation")
-        if self.window.get_visible():
+        if self.window.get_visible() and self.revealer.get_reveal_child():
             self.loop_active = True
             self.GLib.timeout_add(250, self._begin_if_visible)
 
@@ -563,7 +648,11 @@ class VoiceAssistantApplication:
         payload = status_payload(
             self.state,
             self.detail,
-            visible=getattr(self, "window", None) is not None and self.window.get_visible(),
+            visible=(
+                getattr(self, "window", None) is not None
+                and self.window.get_visible()
+                and self.revealer.get_reveal_child()
+            ),
             degraded=self.degraded,
         )
         atomic_json_write(STATUS_PATH, payload, mode=0o600)
@@ -580,10 +669,14 @@ class VoiceAssistantApplication:
 
     def _quit(self) -> bool:
         self.stop_loop()
+        self.revealer.set_reveal_child(False)
+        self.window.hide()
         self.Gtk.main_quit()
         return False
 
     def _cleanup(self) -> None:
+        self.claude.cancel()
+        self.speech.close()
         if self.control_socket:
             server = self.control_socket
             self.control_socket = None

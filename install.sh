@@ -59,6 +59,7 @@ install_application() {
         "$package_target" \
         "$(staged_path "$LOCAL_BIN")" \
         "$(staged_path "${CONFIG_HOME}/${APP_NAME}")" \
+        "$(staged_path "${CONFIG_HOME}/waybar")" \
         "$(staged_path "${CONFIG_HOME}/systemd/user")"
 
     install -m 0644 \
@@ -71,6 +72,12 @@ install_application() {
         "${SOURCE_ROOT}/config/notch-voice-assistant/style.css" \
         "$(staged_path "${CONFIG_HOME}/${APP_NAME}/style.css")"
     install -m 0644 \
+        "${SOURCE_ROOT}/assets/anthropic.png" \
+        "$(staged_path "${CONFIG_HOME}/${APP_NAME}/anthropic.png")"
+    install -m 0644 \
+        "${SOURCE_ROOT}/assets/anthropic.png" \
+        "$(staged_path "${CONFIG_HOME}/waybar/anthropic.png")"
+    install -m 0644 \
         "${SOURCE_ROOT}/config/systemd/user/${APP_NAME}.service" \
         "$(staged_path "${CONFIG_HOME}/systemd/user/${APP_NAME}.service")"
 }
@@ -79,9 +86,9 @@ install_speech_stack() {
     local venv="${DATA_HOME}/${APP_NAME}/venv"
     local models="${DATA_HOME}/${APP_NAME}/models"
     local -a packages=(
-        "piper-tts==1.5.0"
         "faster-whisper==1.2.1"
         "webrtcvad-wheels==2.0.14"
+        "uv"
     )
 
     if [[ "$cpu_only" == false ]] && command -v nvidia-smi >/dev/null 2>&1; then
@@ -98,15 +105,41 @@ install_speech_stack() {
     "$venv/bin/hf" download \
         Systran/faster-whisper-small.en \
         --cache-dir "$models"
-    "$venv/bin/python" -m piper.download_voices \
-        --data-dir "$models" \
-        en_US-lessac-medium
+    install_coqui_stack "$venv" "$models"
+}
+
+install_coqui_stack() {
+    local assistant_venv="$1"
+    local models="$2"
+    local coqui_venv="${DATA_HOME}/${APP_NAME}/coqui-venv"
+    local coqui_python="${coqui_venv}/bin/python"
+    local ready_path="${DATA_HOME}/${APP_NAME}/coqui-ready.json"
+    local ready_temporary="${ready_path}.tmp"
+
+    if [[ ! -x "$coqui_python" ]]; then
+        "$assistant_venv/bin/uv" venv --python 3.11 "$coqui_venv"
+    fi
+    "$assistant_venv/bin/uv" pip install \
+        --python "$coqui_python" \
+        --index-url https://download.pytorch.org/whl/cpu \
+        "torch==2.5.1" \
+        "torchaudio==2.5.1"
+    "$assistant_venv/bin/uv" pip install \
+        --python "$coqui_python" \
+        "TTS==0.22.0"
+
+    PYTHONPATH="$LOCAL_LIB" \
+        TTS_HOME="${models}/coqui" \
+        "$coqui_python" \
+        -m notch_voice_assistant.coqui_worker \
+        --preload >"$ready_temporary"
+    mv -- "$ready_temporary" "$ready_path"
 }
 
 warn_for_missing_system_dependencies() {
     local command
     local -a missing=()
-    for command in claude ffmpeg aplay; do
+    for command in claude ffmpeg aplay espeak-ng; do
         command -v "$command" >/dev/null 2>&1 || missing+=("$command")
     done
     if (( ${#missing[@]} > 0 )); then

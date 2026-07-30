@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import io
 import os
 import subprocess
 import threading
-import wave
 from collections import deque
 from pathlib import Path
 from typing import Callable
 
 import numpy as np
 
+from .coqui import CoquiSynthesizer
 from .state import MODELS_DIR, WHISPER_DEVICE_PATH
 
 
@@ -170,8 +169,7 @@ class SpeechServices:
     def __init__(self) -> None:
         self.whisper_model = None
         self.whisper_backend = ""
-        self.piper_voice = None
-        self.piper_error: str | None = None
+        self.coqui = CoquiSynthesizer()
         self._model_lock = threading.Lock()
         self._speech_lock = threading.Lock()
         self._playback_process: subprocess.Popen[bytes] | None = None
@@ -252,31 +250,8 @@ class SpeechServices:
             )
         return " ".join(segment.text.strip() for segment in segments).strip()
 
-    def _load_piper(self) -> None:
-        if self.piper_voice is not None or self.piper_error:
-            return
-        with self._model_lock:
-            if self.piper_voice is not None or self.piper_error:
-                return
-            model_path = MODELS_DIR / "en_US-lessac-medium.onnx"
-            if not model_path.is_file():
-                self.piper_error = f"Piper voice model is missing: {model_path}"
-                return
-            try:
-                from piper import PiperVoice
-
-                self.piper_voice = PiperVoice.load(str(model_path), use_cuda=False)
-            except Exception as error:
-                self.piper_error = str(error)
-
     def synthesize_wav(self, text: str) -> bytes:
-        self._load_piper()
-        if self.piper_voice is None:
-            raise AudioUnavailable(self.piper_error or "Piper is unavailable.")
-        output = io.BytesIO()
-        with wave.open(output, "wb") as wav_file:
-            self.piper_voice.synthesize_wav(text, wav_file)
-        return output.getvalue()
+        return self.coqui.synthesize_wav(text)
 
     def speak(self, text: str) -> str | None:
         if not text:
@@ -297,7 +272,7 @@ class SpeechServices:
                 if process.returncode:
                     raise AudioUnavailable(stderr.decode(errors="replace").strip())
                 return None
-            except Exception as piper_error:
+            except Exception as coqui_error:
                 self._playback_process = None
                 try:
                     process = subprocess.Popen(
@@ -311,11 +286,11 @@ class SpeechServices:
                     self._playback_process = None
                     if process.returncode:
                         raise AudioUnavailable(stderr.decode(errors="replace").strip())
-                    return f"Piper unavailable; using eSpeak ({piper_error})"
+                    return f"Coqui unavailable; using eSpeak ({coqui_error})"
                 except Exception as fallback_error:
                     self._playback_process = None
                     raise AudioUnavailable(
-                        f"Speech output failed: {piper_error}; fallback failed: {fallback_error}"
+                        f"Speech output failed: {coqui_error}; fallback failed: {fallback_error}"
                     ) from fallback_error
 
     def stop_playback(self) -> None:
@@ -326,3 +301,7 @@ class SpeechServices:
             os.killpg(process.pid, 15)
         except ProcessLookupError:
             pass
+
+    def close(self) -> None:
+        self.stop_playback()
+        self.coqui.close()
