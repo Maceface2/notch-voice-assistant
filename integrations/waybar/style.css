@@ -1,0 +1,43 @@
+#custom-voice-assistant {
+  border-radius: 999px;
+  margin: 0 4px;
+  padding: 2px 11px 2px 9px;
+  color: rgba(255, 255, 255, 0.72);
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+#custom-voice-assistant.active {
+  color: #000;
+  background-color: @accent_color;
+}
+
+#custom-voice-assistant.listening {
+  color: #fff;
+  background-color: #d94a58;
+}
+
+#custom-voice-assistant.transcribing {
+  color: #000;
+  background-color: #ffbd5a;
+}
+
+#custom-voice-assistant.thinking,
+#custom-voice-assistant.acting {
+  color: #000;
+  background-color: #89b4fa;
+}
+
+#custom-voice-assistant.speaking {
+  color: #000;
+  background-color: #72e1a1;
+}
+
+#custom-voice-assistant.error {
+  color: #fff;
+  background-color: #d94a58;
+}
+
+#custom-voice-assistant:hover {
+  color: #000;
+  background-color: @accent_color;
+}

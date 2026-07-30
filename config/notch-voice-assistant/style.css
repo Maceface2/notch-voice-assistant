@@ -1,0 +1,101 @@
+window#notch-voice-assistant {
+  background: transparent;
+  color: #ffffff;
+  font-family: "FantasqueSansM Nerd Font", sans-serif;
+  font-size: 14px;
+}
+
+.assistant-card {
+  background: #050505;
+  border-radius: 0 0 18px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-top: none;
+  padding: 16px 18px 18px;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.65);
+}
+
+.assistant-header {
+  min-height: 34px;
+}
+
+.status-label {
+  font-weight: 700;
+}
+
+.status-dot {
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 11px;
+}
+
+.status-dot.listening {
+  color: #ff5f6d;
+}
+
+.status-dot.transcribing {
+  color: #ffbd5a;
+}
+
+.status-dot.thinking,
+.status-dot.acting {
+  color: #89b4fa;
+}
+
+.status-dot.speaking {
+  color: #72e1a1;
+}
+
+.status-dot.error {
+  color: #ff5f6d;
+}
+
+button,
+combobox button {
+  background: rgba(255, 255, 255, 0.09);
+  color: #ffffff;
+  border: none;
+  border-radius: 999px;
+  padding: 7px 12px;
+  box-shadow: none;
+  font-weight: 700;
+}
+
+button:hover,
+combobox button:hover {
+  background: #ffffff;
+  color: #000000;
+}
+
+button:checked {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.primary-action {
+  background: #ffffff;
+  color: #000000;
+  font-size: 15px;
+}
+
+.primary-action:hover {
+  background: #d9d9d9;
+}
+
+.transcript-scroll {
+  background: rgba(255, 255, 255, 0.055);
+  border-radius: 14px;
+}
+
+textview#voice-transcript,
+textview#voice-transcript text {
+  background: transparent;
+  color: #eeeeee;
+  caret-color: transparent;
+  font-family: "FantasqueSansM Nerd Font", sans-serif;
+  font-weight: 500;
+}
+
+scrollbar slider {
+  min-width: 5px;
+  min-height: 24px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+}
