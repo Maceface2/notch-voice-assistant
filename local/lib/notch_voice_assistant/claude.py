@@ -21,21 +21,10 @@ displayed and spoken aloud: make it direct, conversational, and normally no
 more than 75 words unless the user explicitly asks for detail. Do not repeat
 raw tool output or narrate every tool call in the final response. If an action
 is irreversible or materially risky, respect any existing permission or
-guardrail requirement instead of trying to bypass it.
+guardrail requirement instead of trying to bypass it. Start directly with the
+answer or outcome; never preface it with filler such as "Sure," "Got it," or
+"Found it."
 """.strip()
-
-
-TOOL_STATUS = {
-    "Bash": "I’m working on the system.",
-    "Read": "I’m checking the relevant files.",
-    "Glob": "I’m finding the right files.",
-    "Grep": "I’m searching for that.",
-    "Edit": "I’m updating the configuration.",
-    "Write": "I’m writing the requested change.",
-    "WebFetch": "I’m checking the source.",
-    "WebSearch": "I’m researching that.",
-    "Task": "I’m working through that.",
-}
 
 
 @dataclass(slots=True)
@@ -45,10 +34,6 @@ class ClaudeResult:
     error: str | None = None
     permission_blocked: bool = False
     return_code: int = 0
-
-
-def friendly_tool_status(tool_name: str) -> str:
-    return TOOL_STATUS.get(tool_name, "I’m working on that.")
 
 
 def sanitize_for_speech(text: str, limit: int = 1200) -> str:

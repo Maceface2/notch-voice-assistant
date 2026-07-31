@@ -13,11 +13,12 @@ portable iteration. Clicking the white Claude starburst:
    faster-whisper.
 3. Sends the request to Claude Code.
 4. Streams the reply from ElevenLabs directly into the audio player.
-5. Listens for the next turn until stopped or closed.
+5. Listens for the next turn in the background until **Off** is selected.
 
-There is no wake word or background recording. Recorded audio stays in memory.
-Transcription remains local; reply text is sent to ElevenLabs for speech
-generation.
+There is no wake word. Listening begins only after selecting **On** or opening
+the notch. Hiding the panel does not turn listening off; selecting **Off** does.
+Recorded audio stays in memory. Transcription remains local; reply text is sent
+to ElevenLabs for speech generation.
 
 ## Features
 
@@ -26,9 +27,11 @@ generation.
 - Layered WebRTC and Silero VAD with low-confidence filler rejection
 - CUDA `distil-large-v3` transcription with a CPU `small.en` fallback
 - Persistent Claude Code sessions with Sonnet and Opus selection
-- ElevenLabs Flash v2.5 streaming for low first-audio latency
+- ElevenLabs Turbo v2.5 streaming with stability set to `0.5`
 - Account voice discovery and on-demand voice switching
 - eSpeak fallback when ElevenLabs or the network is unavailable
+- Persistent background listening with explicit **On** and **Off** choices
+- Silent tool activity indicators instead of prerecorded status fillers
 - Waybar indicators for listening, transcribing, thinking, acting, and speaking
 - On-demand systemd user service with a ten-minute hidden-idle timeout
 
@@ -50,18 +53,21 @@ List voices or switch later:
 notch-voice-assistant voices
 notch-voice-assistant set-voice VOICE_ID
 notch-voice-assistant set-speed 1.15
+notch-voice-assistant set-tts-model eleven_turbo_v2_5
+notch-voice-assistant set-stability 0.5
 ```
 
-The defaults are the `eleven_flash_v2_5` low-latency model and 44.1 kHz,
-128 kbps MP3 streaming. The first complete Claude sentence begins speaking
-while the rest of the response is still being generated. Environment variables
-can override saved settings:
+The defaults are the `eleven_turbo_v2_5` model, `0.5` stability, `1.15x`
+speaking speed, and 44.1 kHz/128 kbps MP3 streaming. The first complete Claude
+sentence begins speaking while the rest of the response is still being
+generated. Environment variables can override saved settings:
 
 ```sh
 ELEVENLABS_API_KEY=... \
 ELEVENLABS_VOICE_ID=... \
-ELEVENLABS_MODEL_ID=eleven_flash_v2_5 \
+ELEVENLABS_MODEL_ID=eleven_turbo_v2_5 \
 ELEVENLABS_SPEED=1.15 \
+ELEVENLABS_STABILITY=0.5 \
 notch-voice-assistant daemon
 ```
 
@@ -73,10 +79,11 @@ requires a paid plan to use Voice Library voices through the API.
 
 | Action | Result |
 | --- | --- |
-| Left-click Waybar starburst | Expand/collapse; opening immediately listens |
-| Right-click Waybar starburst | Stop the conversational loop |
+| Left-click Waybar starburst | Expand/collapse; opening selects **On**, hiding keeps the current state |
+| Right-click Waybar starburst | Select **Off** |
 | Middle-click Waybar starburst | Start a new Claude session |
-| **Listen** / **Stop** | Start or stop the loop |
+| **On** | Keep listening, including while the notch is hidden |
+| **Off** | Stop the microphone and conversational loop |
 | **Sonnet** / **Opus** | Choose the Claude model for the next turn |
 | Speaker button | Mute or unmute replies |
 | **New** | Clear the transcript and begin a new session |
@@ -149,8 +156,8 @@ during an update. After confirming ElevenLabs works, the old cache under
 ## Upstream services and assets
 
 - [ElevenLabs Text to Speech](https://elevenlabs.io/docs/api-reference/text-to-speech/stream)
-  provides streaming speech with
-  [Flash v2.5](https://elevenlabs.io/docs/overview/models).
+  provides speech streaming with
+  [Turbo v2.5](https://elevenlabs.io/docs/overview/models).
 - The monochrome Claude starburst is adapted from the official
   [Claude website](https://claude.ai/) icon and remains an Anthropic trademark.
 
@@ -160,7 +167,8 @@ during an update. After confirming ElevenLabs works, the old cache under
 - [x] Add a repeatable installer and conservative uninstaller
 - [x] Add a same-width animated notch expansion and Claude visual identity
 - [x] Add local GPU transcription with CPU fallback
-- [x] Replace local Fish synthesis with ElevenLabs Flash streaming
+- [x] Replace local Fish synthesis with ElevenLabs streaming
+- [x] Add explicit background-listening **On** and **Off** states
 - [ ] Formalize Python packaging and dependency metadata
 - [ ] Add barge-in so speaking can be interrupted naturally
 - [ ] Expand state-machine and failure-path tests

@@ -14,7 +14,6 @@ from .claude import (
     ClaudeResult,
     ClaudeRunner,
     first_spoken_sentence,
-    friendly_tool_status,
     sanitize_for_speech,
 )
 from .state import (
@@ -36,7 +35,6 @@ from .state import (
 class VoiceAssistantApplication:
     ANIMATION_MS = 240
     IDLE_EXIT_SECONDS = 600
-    TOOL_SPEECH_INTERVAL = 8
 
     def __init__(self) -> None:
         (
@@ -56,7 +54,6 @@ class VoiceAssistantApplication:
         self.loop_active = False
         self.generation = 0
         self.last_activity = time.monotonic()
-        self.last_tool_spoken_at = 0.0
         self.current_reply = ""
         self.early_speech_thread: threading.Thread | None = None
         self.early_speech_source = ""
@@ -188,8 +185,8 @@ class VoiceAssistantApplication:
         header.pack_start(new_button, False, False, 0)
 
         close_button = Gtk.Button(label="×")
-        close_button.set_tooltip_text("Stop and close")
-        close_button.connect("clicked", lambda *_: self.stop_and_hide())
+        close_button.set_tooltip_text("Hide · listening stays on")
+        close_button.connect("clicked", lambda *_: self.hide_panel())
         header.pack_start(close_button, False, False, 0)
 
         transcript_scroll = Gtk.ScrolledWindow()
@@ -215,11 +212,24 @@ class VoiceAssistantApplication:
         controls.get_style_context().add_class("assistant-controls")
         root.pack_start(controls, False, False, 0)
 
-        self.action_button = Gtk.Button(label="󰍬  Listen")
-        self.action_button.set_size_request(150, 44)
-        self.action_button.get_style_context().add_class("primary-action")
-        self.action_button.connect("clicked", self._on_action_clicked)
-        controls.pack_start(self.action_button, False, False, 0)
+        listening_choices = Gtk.Box(
+            orientation=Gtk.Orientation.HORIZONTAL,
+            spacing=2,
+        )
+        listening_choices.get_style_context().add_class("listening-choices")
+        controls.pack_start(listening_choices, False, False, 0)
+
+        self.listening_on_button = Gtk.Button(label="󰍬  On")
+        self.listening_on_button.set_size_request(74, 44)
+        self.listening_on_button.get_style_context().add_class("listening-choice")
+        self.listening_on_button.connect("clicked", self._on_listening_on)
+        listening_choices.pack_start(self.listening_on_button, False, False, 0)
+
+        self.listening_off_button = Gtk.Button(label="󰓛  Off")
+        self.listening_off_button.set_size_request(74, 44)
+        self.listening_off_button.get_style_context().add_class("listening-choice")
+        self.listening_off_button.connect("clicked", self._on_listening_off)
+        listening_choices.pack_start(self.listening_off_button, False, False, 0)
 
         self.continue_button = Gtk.Button(label="Continue in terminal")
         self.continue_button.set_no_show_all(True)
@@ -287,7 +297,7 @@ class VoiceAssistantApplication:
         self.last_activity = time.monotonic()
         if command == "toggle":
             if self.window.get_visible() and self.revealer.get_reveal_child():
-                self.stop_and_hide()
+                self.hide_panel()
             else:
                 self.show_and_listen()
         elif command == "open":
@@ -304,7 +314,9 @@ class VoiceAssistantApplication:
     def show_and_listen(self) -> None:
         self.animation_generation += 1
         animation_generation = self.animation_generation
-        self.loop_active = True
+        if not self.loop_active:
+            self.loop_active = True
+            self._update_listening_choices()
         self.continue_button.hide()
         self.revealer.set_reveal_child(False)
         self.window.show_all()
@@ -329,12 +341,14 @@ class VoiceAssistantApplication:
             and self.window.get_visible()
             and self.revealer.get_reveal_child()
             and self.loop_active
+            and self.recorder is None
+            and self.state in {AssistantState.IDLE, AssistantState.ERROR}
         ):
             self.start_listening()
         return False
 
     def start_listening(self) -> None:
-        if not self.loop_active:
+        if not self.loop_active or self.recorder is not None:
             return
         self.last_activity = time.monotonic()
         self.generation += 1
@@ -357,8 +371,8 @@ class VoiceAssistantApplication:
             return False
         self.recorder = None
         if not pcm_bytes:
-            self._set_state(AssistantState.IDLE, "No speech detected")
-            self.loop_active = False
+            self._set_state(AssistantState.LISTENING, "Listening…")
+            self.GLib.timeout_add(150, self._restart_listening, generation)
             return False
 
         self._set_state(AssistantState.TRANSCRIBING, "Transcribing locally…")
@@ -377,7 +391,8 @@ class VoiceAssistantApplication:
         if generation != self.generation or not self.loop_active:
             return False
         if not text:
-            self._operation_error(generation, "I could not make out any speech.")
+            self._set_state(AssistantState.LISTENING, "Listening…")
+            self.GLib.timeout_add(150, self._restart_listening, generation)
             return False
 
         self.preferences.messages.append({"role": "user", "text": text})
@@ -451,29 +466,8 @@ class VoiceAssistantApplication:
     def _tool_started(self, generation: int, tool_name: str) -> bool:
         if generation != self.generation:
             return False
-        spoken_status = friendly_tool_status(tool_name)
         self._set_state(AssistantState.ACTING, f"Using {tool_name}…")
-        now = time.monotonic()
-        if (
-            not self.preferences.muted
-            and now - self.last_tool_spoken_at >= self.TOOL_SPEECH_INTERVAL
-        ):
-            self.last_tool_spoken_at = now
-            threading.Thread(
-                target=self._speak_status,
-                args=(generation, spoken_status),
-                name="voice-tool-status",
-                daemon=True,
-            ).start()
         return False
-
-    def _speak_status(self, generation: int, text: str) -> None:
-        try:
-            degraded = self.speech.speak(text)
-            if degraded:
-                self.GLib.idle_add(self._set_degraded, generation, degraded)
-        except Exception:
-            pass
 
     def _retry_status(self, generation: int, message: str) -> bool:
         if generation == self.generation:
@@ -489,9 +483,9 @@ class VoiceAssistantApplication:
         if result.error:
             self.preferences.save()
             self._set_state(AssistantState.ERROR, result.error)
-            self.loop_active = False
             if result.permission_blocked and result.session_id:
                 self.continue_button.show()
+            self.GLib.timeout_add(500, self._restart_listening, generation)
             return False
 
         reply = result.text.strip() or self.current_reply.strip()
@@ -544,23 +538,23 @@ class VoiceAssistantApplication:
         if generation != self.generation:
             return False
         self._set_state(AssistantState.ERROR, error)
-        self.loop_active = False
+        self.GLib.timeout_add(500, self._restart_listening, generation)
         return False
 
     def _resume_after_speech(self, generation: int) -> bool:
-        if (
-            generation == self.generation
-            and self.loop_active
-            and self.window.get_visible()
-            and self.revealer.get_reveal_child()
-        ):
+        if generation == self.generation and self.loop_active:
+            self.start_listening()
+        return False
+
+    def _restart_listening(self, generation: int) -> bool:
+        if generation == self.generation and self.loop_active:
             self.start_listening()
         return False
 
     def _operation_error(self, generation: int, error: str) -> bool:
         if generation == self.generation:
-            self.loop_active = False
             self._set_state(AssistantState.ERROR, error)
+            self.GLib.timeout_add(2_000, self._restart_listening, generation)
         return False
 
     def _set_degraded(self, generation: int, degraded: str) -> bool:
@@ -569,19 +563,15 @@ class VoiceAssistantApplication:
             self._write_status()
         return False
 
-    def _on_action_clicked(self, _button) -> None:
-        if self.state == AssistantState.LISTENING and self.recorder:
-            self.recorder.finish(submit=True)
-        elif self.state in {
-            AssistantState.TRANSCRIBING,
-            AssistantState.THINKING,
-            AssistantState.ACTING,
-            AssistantState.SPEAKING,
-        }:
-            self.stop_loop()
-        else:
+    def _on_listening_on(self, _button) -> None:
+        if not self.loop_active:
             self.loop_active = True
+            self._update_listening_choices()
             self.start_listening()
+
+    def _on_listening_off(self, _button) -> None:
+        if self.loop_active:
+            self.stop_loop()
 
     def stop_loop(self) -> None:
         self.loop_active = False
@@ -594,8 +584,7 @@ class VoiceAssistantApplication:
         self.speech.stop_playback()
         self._set_state(AssistantState.IDLE, "Stopped")
 
-    def stop_and_hide(self) -> None:
-        self.stop_loop()
+    def hide_panel(self) -> None:
         self.animation_generation += 1
         animation_generation = self.animation_generation
         self.revealer.set_reveal_child(False)
@@ -605,6 +594,10 @@ class VoiceAssistantApplication:
             self._finish_hide,
             animation_generation,
         )
+
+    def stop_and_hide(self) -> None:
+        self.stop_loop()
+        self.hide_panel()
 
     def _finish_hide(self, animation_generation: int) -> bool:
         if (
@@ -616,18 +609,20 @@ class VoiceAssistantApplication:
         return False
 
     def new_session(self) -> None:
+        was_active = self.loop_active
         self.stop_loop()
         self.preferences.reset_conversation()
         self.current_reply = ""
         self.continue_button.hide()
         self._render_transcript()
         self._set_state(AssistantState.IDLE, "New conversation")
-        if self.window.get_visible() and self.revealer.get_reveal_child():
+        if was_active:
             self.loop_active = True
-            self.GLib.timeout_add(250, self._begin_if_visible)
+            self._update_listening_choices()
+            self.GLib.timeout_add(250, self._begin_if_active)
 
-    def _begin_if_visible(self) -> bool:
-        if self.window.get_visible() and self.loop_active:
+    def _begin_if_active(self) -> bool:
+        if self.loop_active:
             self.start_listening()
         return False
 
@@ -665,12 +660,12 @@ class VoiceAssistantApplication:
             self.speech.stop_playback()
 
     def _on_delete(self, *_args) -> bool:
-        self.stop_and_hide()
+        self.hide_panel()
         return True
 
     def _on_key_press(self, _window, event) -> bool:
         if event.keyval == 65307:  # Escape
-            self.stop_and_hide()
+            self.hide_panel()
             return True
         return False
 
@@ -684,20 +679,15 @@ class VoiceAssistantApplication:
             for state_name in AssistantState:
                 context.remove_class(state_name.value)
             context.add_class(state.value)
-            self._update_action_button()
+            self._update_listening_choices()
         self._write_status()
 
-    def _update_action_button(self) -> None:
-        labels = {
-            AssistantState.IDLE: "󰍬  Listen",
-            AssistantState.LISTENING: "󰓛  Send",
-            AssistantState.TRANSCRIBING: "󰓛  Stop",
-            AssistantState.THINKING: "󰓛  Stop",
-            AssistantState.ACTING: "󰓛  Stop",
-            AssistantState.SPEAKING: "󰍬  Interrupt",
-            AssistantState.ERROR: "󰍬  Try again",
-        }
-        self.action_button.set_label(labels[self.state])
+    def _update_listening_choices(self) -> None:
+        on_context = self.listening_on_button.get_style_context()
+        off_context = self.listening_off_button.get_style_context()
+        on_context.remove_class("selected")
+        off_context.remove_class("selected")
+        (on_context if self.loop_active else off_context).add_class("selected")
 
     def _render_transcript(self, *, pending_reply: bool = False) -> None:
         lines: list[str] = []

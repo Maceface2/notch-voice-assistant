@@ -15,6 +15,7 @@ from .elevenlabs import (
     DEFAULT_MODEL_ID,
     MAXIMUM_SPEED,
     MINIMUM_SPEED,
+    SUPPORTED_MODELS,
     ElevenLabsSettings,
     ElevenLabsSynthesizer,
     ElevenLabsUnavailable,
@@ -140,8 +141,9 @@ def configure_elevenlabs() -> int:
         voice_id=voice_id,
         model_id=DEFAULT_MODEL_ID,
         speed=current.speed,
+        stability=current.stability,
     ).save()
-    print(f"Saved ElevenLabs Flash configuration to {ELEVENLABS_CONFIG_PATH}.")
+    print(f"Saved ElevenLabs configuration to {ELEVENLABS_CONFIG_PATH}.")
     return 0
 
 
@@ -173,6 +175,7 @@ def set_voice(voice_id: str) -> int:
         voice_id=voice_id,
         model_id=settings.model_id,
         speed=settings.speed,
+        stability=settings.stability,
     )
     settings.save()
     print(f"ElevenLabs voice set to {voice_id}.")
@@ -194,8 +197,51 @@ def set_speed(raw_speed: str) -> int:
         voice_id=settings.voice_id,
         model_id=settings.model_id,
         speed=speed,
+        stability=settings.stability,
     ).save()
     print(f"ElevenLabs speaking speed set to {speed:.2f}x.")
+    return 0
+
+
+def set_tts_model(model_id: str) -> int:
+    model_id = model_id.strip()
+    if model_id not in SUPPORTED_MODELS:
+        print(
+            "TTS model must be eleven_turbo_v2_5, eleven_flash_v2_5, "
+            "or eleven_multilingual_v2.",
+            file=sys.stderr,
+        )
+        return 2
+    settings = ElevenLabsSettings.load()
+    ElevenLabsSettings(
+        api_key=settings.api_key,
+        voice_id=settings.voice_id,
+        model_id=model_id,
+        speed=settings.speed,
+        stability=settings.stability,
+    ).save()
+    print(f"ElevenLabs TTS model set to {model_id}.")
+    return 0
+
+
+def set_stability(raw_stability: str) -> int:
+    try:
+        stability = float(raw_stability)
+    except ValueError:
+        print("Stability must be a number from 0 to 1.", file=sys.stderr)
+        return 2
+    if not 0.0 <= stability <= 1.0:
+        print("Stability must be from 0 to 1.", file=sys.stderr)
+        return 2
+    settings = ElevenLabsSettings.load()
+    ElevenLabsSettings(
+        api_key=settings.api_key,
+        voice_id=settings.voice_id,
+        model_id=settings.model_id,
+        speed=settings.speed,
+        stability=stability,
+    ).save()
+    print(f"ElevenLabs stability set to {stability:.2f}.")
     return 0
 
 
@@ -267,6 +313,8 @@ def main(argv: list[str] | None = None) -> int:
             "voices",
             "set-voice",
             "set-speed",
+            "set-tts-model",
+            "set-stability",
             "quit",
         ],
     )
@@ -291,6 +339,14 @@ def main(argv: list[str] | None = None) -> int:
         if not arguments.value:
             parser.error("set-speed requires <0.7-1.2>")
         return set_speed(arguments.value)
+    if arguments.command == "set-tts-model":
+        if not arguments.value:
+            parser.error("set-tts-model requires a model ID")
+        return set_tts_model(arguments.value)
+    if arguments.command == "set-stability":
+        if not arguments.value:
+            parser.error("set-stability requires <0-1>")
+        return set_stability(arguments.value)
     return send_command(arguments.command, start_service=arguments.command != "quit")
 
 

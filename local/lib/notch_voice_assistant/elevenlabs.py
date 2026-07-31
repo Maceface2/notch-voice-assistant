@@ -13,11 +13,17 @@ from .state import ELEVENLABS_CONFIG_PATH, atomic_json_write
 
 
 DEFAULT_VOICE_ID = "cgSgspJ2msm6clMCkdW9"
-DEFAULT_MODEL_ID = "eleven_flash_v2_5"
+DEFAULT_MODEL_ID = "eleven_turbo_v2_5"
 DEFAULT_OUTPUT_FORMAT = "mp3_44100_128"
 DEFAULT_SPEED = 1.15
+DEFAULT_STABILITY = 0.5
 MINIMUM_SPEED = 0.7
 MAXIMUM_SPEED = 1.2
+SUPPORTED_MODELS = {
+    "eleven_flash_v2_5",
+    "eleven_turbo_v2_5",
+    "eleven_multilingual_v2",
+}
 API_ROOT = "https://api.elevenlabs.io"
 
 
@@ -35,6 +41,7 @@ class ElevenLabsSettings:
     voice_id: str = DEFAULT_VOICE_ID
     model_id: str = DEFAULT_MODEL_ID
     speed: float = DEFAULT_SPEED
+    stability: float = DEFAULT_STABILITY
 
     @classmethod
     def load(cls) -> "ElevenLabsSettings":
@@ -68,11 +75,22 @@ class ElevenLabsSettings:
             speed = DEFAULT_SPEED
         if not MINIMUM_SPEED <= speed <= MAXIMUM_SPEED:
             speed = DEFAULT_SPEED
+        raw_stability = os.environ.get(
+            "ELEVENLABS_STABILITY",
+            str(saved.get("stability", DEFAULT_STABILITY)),
+        ).strip()
+        try:
+            stability = float(raw_stability)
+        except ValueError:
+            stability = DEFAULT_STABILITY
+        if not 0.0 <= stability <= 1.0:
+            stability = DEFAULT_STABILITY
         return cls(
             api_key=api_key,
             voice_id=voice_id or DEFAULT_VOICE_ID,
             model_id=model_id or DEFAULT_MODEL_ID,
             speed=speed,
+            stability=stability,
         )
 
     def save(self) -> None:
@@ -83,13 +101,14 @@ class ElevenLabsSettings:
                 "voice_id": self.voice_id,
                 "model_id": self.model_id,
                 "speed": self.speed,
+                "stability": self.stability,
             },
             mode=0o600,
         )
 
 
 class ElevenLabsSynthesizer:
-    """Low-latency ElevenLabs Flash streaming client."""
+    """Streaming ElevenLabs speech client."""
 
     REQUEST_TIMEOUT_SECONDS = 120
 
@@ -111,7 +130,7 @@ class ElevenLabsSynthesizer:
                     "model_id": settings.model_id,
                     "language_code": "en",
                     "voice_settings": {
-                        "stability": 0.35,
+                        "stability": settings.stability,
                         "similarity_boost": 0.75,
                         "style": 0.0,
                         "use_speaker_boost": True,

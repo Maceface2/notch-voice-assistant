@@ -5,6 +5,7 @@ import os
 import stat
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -16,11 +17,16 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 from notch_voice_assistant.claude import (  # noqa: E402
     ClaudeRunner,
     first_spoken_sentence,
-    friendly_tool_status,
     sanitize_for_speech,
 )
 from notch_voice_assistant.audio import SpeechServices  # noqa: E402
-from notch_voice_assistant.cli import set_speed, set_voice  # noqa: E402
+from notch_voice_assistant.app import VoiceAssistantApplication  # noqa: E402
+from notch_voice_assistant.cli import (  # noqa: E402
+    set_speed,
+    set_stability,
+    set_tts_model,
+    set_voice,
+)
 from notch_voice_assistant.elevenlabs import (  # noqa: E402
     DEFAULT_MODEL_ID,
     DEFAULT_OUTPUT_FORMAT,
@@ -48,9 +54,6 @@ class SpeechSanitizerTests(unittest.TestCase):
         spoken = sanitize_for_speech(text, limit=80)
         self.assertLess(len(spoken), 150)
         self.assertTrue(spoken.endswith("The complete answer is in the transcript."))
-
-    def test_unknown_tool_has_friendly_fallback(self) -> None:
-        self.assertEqual(friendly_tool_status("CustomTool"), "I’m working on that.")
 
     def test_extracts_first_complete_sentence_for_early_speech(self) -> None:
         text = "Here is the answer you need. The remaining detail is still streaming."
@@ -103,7 +106,7 @@ class StatusTests(unittest.TestCase):
 
 
 class SpeechServiceTests(unittest.TestCase):
-    def test_elevenlabs_stream_uses_flash_and_low_latency_mp3(self) -> None:
+    def test_elevenlabs_stream_uses_turbo_and_high_quality_mp3(self) -> None:
         response = mock.MagicMock()
         response.__enter__.return_value = response
         response.read1.side_effect = [b"ID3", b"audio", b""]
@@ -127,9 +130,10 @@ class SpeechServiceTests(unittest.TestCase):
         self.assertIn(f"output_format={DEFAULT_OUTPUT_FORMAT}", request.full_url)
         self.assertEqual(DEFAULT_OUTPUT_FORMAT, "mp3_44100_128")
         self.assertIn("/voice-123/stream", request.full_url)
-        self.assertEqual(payload["model_id"], "eleven_flash_v2_5")
+        self.assertEqual(payload["model_id"], "eleven_turbo_v2_5")
         self.assertEqual(payload["language_code"], "en")
         self.assertEqual(payload["voice_settings"]["speed"], 1.15)
+        self.assertEqual(payload["voice_settings"]["stability"], 0.5)
         self.assertEqual(chunks, [b"ID3", b"audio"])
 
     def test_elevenlabs_config_environment_overrides_saved_values(self) -> None:
@@ -145,6 +149,7 @@ class SpeechServiceTests(unittest.TestCase):
                     "ELEVENLABS_API_KEY": "environment-key",
                     "ELEVENLABS_VOICE_ID": "environment-voice",
                     "ELEVENLABS_SPEED": "1.1",
+                    "ELEVENLABS_STABILITY": "0.6",
                 },
             ),
         ):
@@ -152,6 +157,7 @@ class SpeechServiceTests(unittest.TestCase):
         self.assertEqual(settings.api_key, "environment-key")
         self.assertEqual(settings.voice_id, "environment-voice")
         self.assertEqual(settings.speed, 1.1)
+        self.assertEqual(settings.stability, 0.6)
 
     def test_set_voice_saves_an_elevenlabs_voice_id(self) -> None:
         with (
@@ -177,6 +183,22 @@ class SpeechServiceTests(unittest.TestCase):
             settings = ElevenLabsSettings.load()
             self.assertEqual(set_speed("1.25"), 2)
         self.assertEqual(settings.speed, 1.15)
+
+    def test_tts_model_and_stability_are_configurable(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch(
+                "notch_voice_assistant.elevenlabs.ELEVENLABS_CONFIG_PATH",
+                Path(directory) / "elevenlabs.json",
+            ),
+        ):
+            self.assertEqual(set_tts_model("eleven_turbo_v2_5"), 0)
+            self.assertEqual(set_stability("0.5"), 0)
+            settings = ElevenLabsSettings.load()
+            self.assertEqual(set_tts_model("made-up-model"), 2)
+            self.assertEqual(set_stability("2"), 2)
+        self.assertEqual(settings.model_id, "eleven_turbo_v2_5")
+        self.assertEqual(settings.stability, 0.5)
 
     def test_whisper_device_can_be_forced_with_environment(self) -> None:
         with mock.patch.dict(os.environ, {"NOTCH_VOICE_WHISPER_DEVICE": "cpu"}):
@@ -228,6 +250,61 @@ class SpeechServiceTests(unittest.TestCase):
         loader.assert_any_call(force_cpu=True)
         self.assertEqual(transcript, "CPU fallback worked.")
         self.assertEqual(speech.whisper_backend, "CPU fallback · small.en")
+
+
+class BackgroundListeningTests(unittest.TestCase):
+    def _application(self) -> VoiceAssistantApplication:
+        application = VoiceAssistantApplication.__new__(VoiceAssistantApplication)
+        application.generation = 4
+        application.loop_active = True
+        application.recorder = object()
+        application._set_state = mock.Mock()
+        application.GLib = types.SimpleNamespace(timeout_add=mock.Mock(return_value=1))
+        return application
+
+    def test_empty_capture_keeps_background_listening_on(self) -> None:
+        application = self._application()
+        result = application._recording_finished(4, b"")
+        self.assertFalse(result)
+        self.assertTrue(application.loop_active)
+        self.assertIsNone(application.recorder)
+        application._set_state.assert_called_once_with(
+            AssistantState.LISTENING,
+            "Listening…",
+        )
+        application.GLib.timeout_add.assert_called_once()
+
+    def test_filtered_transcript_keeps_background_listening_on(self) -> None:
+        application = self._application()
+        result = application._transcription_ready(4, "")
+        self.assertFalse(result)
+        self.assertTrue(application.loop_active)
+        application._set_state.assert_called_once_with(
+            AssistantState.LISTENING,
+            "Listening…",
+        )
+        application.GLib.timeout_add.assert_called_once()
+
+    def test_hidden_panel_does_not_block_listening_resume(self) -> None:
+        application = self._application()
+        application.start_listening = mock.Mock()
+        self.assertFalse(application._resume_after_speech(4))
+        application.start_listening.assert_called_once_with()
+
+    def test_on_and_off_are_explicit_listening_choices(self) -> None:
+        application = self._application()
+        application.loop_active = False
+        application._update_listening_choices = mock.Mock()
+        application.start_listening = mock.Mock()
+        application.stop_loop = mock.Mock()
+
+        application._on_listening_on(None)
+        self.assertTrue(application.loop_active)
+        application._update_listening_choices.assert_called_once_with()
+        application.start_listening.assert_called_once_with()
+
+        application._on_listening_off(None)
+        application.stop_loop.assert_called_once_with()
 
 
 class ClaudeRunnerTests(unittest.TestCase):
