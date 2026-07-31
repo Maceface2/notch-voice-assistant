@@ -9,7 +9,11 @@ window#notch-voice-assistant {
   background: transparent;
 }
 
-.notch-seam {
+.mapping-seam {
+  background: transparent;
+}
+
+.notch-corner-fill {
   background: #050505;
 }
 

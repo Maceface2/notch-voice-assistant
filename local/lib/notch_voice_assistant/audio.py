@@ -9,7 +9,7 @@ from typing import Callable
 
 import numpy as np
 
-from .coqui import CoquiSynthesizer
+from .fish_s2 import FishS2Synthesizer
 from .state import MODELS_DIR, WHISPER_DEVICE_PATH
 
 
@@ -169,10 +169,11 @@ class SpeechServices:
     def __init__(self) -> None:
         self.whisper_model = None
         self.whisper_backend = ""
-        self.coqui = CoquiSynthesizer()
+        self.fish_s2 = FishS2Synthesizer()
         self._model_lock = threading.Lock()
         self._speech_lock = threading.Lock()
         self._playback_process: subprocess.Popen[bytes] | None = None
+        self._speech_generation = 0
         self.whisper_device_preference = self._read_whisper_device_preference()
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -251,14 +252,17 @@ class SpeechServices:
         return " ".join(segment.text.strip() for segment in segments).strip()
 
     def synthesize_wav(self, text: str) -> bytes:
-        return self.coqui.synthesize_wav(text)
+        return self.fish_s2.synthesize_wav(text)
 
     def speak(self, text: str) -> str | None:
         if not text:
             return None
         with self._speech_lock:
+            generation = self._speech_generation
             try:
                 wav_bytes = self.synthesize_wav(text)
+                if generation != self._speech_generation:
+                    return None
                 process = subprocess.Popen(
                     ["aplay", "-q"],
                     stdin=subprocess.PIPE,
@@ -272,8 +276,10 @@ class SpeechServices:
                 if process.returncode:
                     raise AudioUnavailable(stderr.decode(errors="replace").strip())
                 return None
-            except Exception as coqui_error:
+            except Exception as fish_s2_error:
                 self._playback_process = None
+                if generation != self._speech_generation:
+                    return None
                 try:
                     process = subprocess.Popen(
                         ["espeak-ng", "-s", "175", text],
@@ -286,14 +292,19 @@ class SpeechServices:
                     self._playback_process = None
                     if process.returncode:
                         raise AudioUnavailable(stderr.decode(errors="replace").strip())
-                    return f"Coqui unavailable; using eSpeak ({coqui_error})"
+                    return (
+                        "Fish Audio S2 Pro unavailable; using eSpeak "
+                        f"({fish_s2_error})"
+                    )
                 except Exception as fallback_error:
                     self._playback_process = None
                     raise AudioUnavailable(
-                        f"Speech output failed: {coqui_error}; fallback failed: {fallback_error}"
+                        "Speech output failed: "
+                        f"{fish_s2_error}; fallback failed: {fallback_error}"
                     ) from fallback_error
 
     def stop_playback(self) -> None:
+        self._speech_generation += 1
         process = self._playback_process
         if not process or process.poll() is not None:
             return
@@ -302,6 +313,13 @@ class SpeechServices:
         except ProcessLookupError:
             pass
 
+    def release_tts_in_background(self) -> None:
+        threading.Thread(
+            target=self.fish_s2.close,
+            name="fish-s2-release",
+            daemon=True,
+        ).start()
+
     def close(self) -> None:
         self.stop_playback()
-        self.coqui.close()
+        self.fish_s2.close()

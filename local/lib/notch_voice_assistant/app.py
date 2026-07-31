@@ -92,9 +92,9 @@ class VoiceAssistantApplication:
         # Pull into Waybar's transparent bottom margin so the revealed rectangle
         # begins at the visual bottom of the center notch.
         try:
-            top_offset = int(os.environ.get("NOTCH_VOICE_TOP_OFFSET", "-8"))
+            top_offset = int(os.environ.get("NOTCH_VOICE_TOP_OFFSET", "-16"))
         except ValueError:
-            top_offset = -8
+            top_offset = -16
         layer_shell.set_margin(self.window, layer_shell.Edge.TOP, top_offset)
         layer_shell.set_keyboard_mode(self.window, layer_shell.KeyboardMode.ON_DEMAND)
         layer_shell.set_exclusive_zone(self.window, 0)
@@ -105,11 +105,10 @@ class VoiceAssistantApplication:
         shell.get_style_context().add_class("assistant-shell")
         self.window.add(shell)
 
-        # A one-pixel full-width seam keeps the layer surface mapped while the
-        # revealer is closed. It is hidden directly behind the Waybar notch.
+        # A transparent pixel keeps the layer surface mapped while closed.
         seam = Gtk.Box()
         seam.set_size_request(-1, 1)
-        seam.get_style_context().add_class("notch-seam")
+        seam.get_style_context().add_class("mapping-seam")
         shell.pack_start(seam, False, False, 0)
 
         self.revealer = Gtk.Revealer()
@@ -118,9 +117,19 @@ class VoiceAssistantApplication:
         self.revealer.set_reveal_child(False)
         shell.pack_start(self.revealer, True, True, 0)
 
+        expansion = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        self.revealer.add(expansion)
+
+        # This overlap is revealed behind Waybar's rounded lower corners,
+        # filling their wedges without changing the closed notch shape.
+        corner_fill = Gtk.Box()
+        corner_fill.set_size_request(-1, 8)
+        corner_fill.get_style_context().add_class("notch-corner-fill")
+        expansion.pack_start(corner_fill, False, False, 0)
+
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         root.get_style_context().add_class("assistant-card")
-        self.revealer.add(root)
+        expansion.pack_start(root, True, True, 0)
 
         header = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         header.get_style_context().add_class("assistant-header")
@@ -550,6 +559,7 @@ class VoiceAssistantApplication:
             and not self.revealer.get_reveal_child()
         ):
             self.window.hide()
+            self.speech.release_tts_in_background()
             self._write_status()
         return False
 
