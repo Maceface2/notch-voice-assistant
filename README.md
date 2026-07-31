@@ -50,9 +50,10 @@ notch-voice-assistant voices
 notch-voice-assistant set-voice VOICE_ID
 ```
 
-The defaults are the `eleven_flash_v2_5` low-latency model and
-`mp3_22050_32`, which avoids paid-tier PCM requirements and minimizes transfer
-and decoder startup time. Environment variables can override saved settings:
+The defaults are the `eleven_flash_v2_5` low-latency model and 44.1 kHz,
+128 kbps MP3 streaming. The first complete Claude sentence begins speaking
+while the rest of the response is still being generated. Environment variables
+can override saved settings:
 
 ```sh
 ELEVENLABS_API_KEY=... \
@@ -62,7 +63,8 @@ notch-voice-assistant daemon
 ```
 
 ElevenLabs is a metered cloud service. Generation consumes account credits and
-requires internet access.
+requires internet access. Default voices work on free accounts, but ElevenLabs
+requires a paid plan to use Voice Library voices through the API.
 
 ## Controls
 

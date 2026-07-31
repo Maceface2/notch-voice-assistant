@@ -15,6 +15,7 @@ sys.path.insert(0, str(PACKAGE_ROOT))
 
 from notch_voice_assistant.claude import (  # noqa: E402
     ClaudeRunner,
+    first_spoken_sentence,
     friendly_tool_status,
     sanitize_for_speech,
 )
@@ -50,6 +51,14 @@ class SpeechSanitizerTests(unittest.TestCase):
 
     def test_unknown_tool_has_friendly_fallback(self) -> None:
         self.assertEqual(friendly_tool_status("CustomTool"), "I’m working on that.")
+
+    def test_extracts_first_complete_sentence_for_early_speech(self) -> None:
+        text = "Here is the answer you need. The remaining detail is still streaming."
+        self.assertEqual(
+            first_spoken_sentence(text),
+            ("Here is the answer you need.", 28),
+        )
+        self.assertIsNone(first_spoken_sentence("This sentence is not complete yet"))
 
 
 class StatusTests(unittest.TestCase):
@@ -97,7 +106,7 @@ class SpeechServiceTests(unittest.TestCase):
     def test_elevenlabs_stream_uses_flash_and_low_latency_mp3(self) -> None:
         response = mock.MagicMock()
         response.__enter__.return_value = response
-        response.read.side_effect = [b"ID3", b"audio", b""]
+        response.read1.side_effect = [b"ID3", b"audio", b""]
         settings = ElevenLabsSettings(
             api_key="test-key",
             voice_id="voice-123",
@@ -116,6 +125,7 @@ class SpeechServiceTests(unittest.TestCase):
         request = urlopen.call_args.args[0]
         payload = json.loads(request.data)
         self.assertIn(f"output_format={DEFAULT_OUTPUT_FORMAT}", request.full_url)
+        self.assertEqual(DEFAULT_OUTPUT_FORMAT, "mp3_44100_128")
         self.assertIn("/voice-123/stream", request.full_url)
         self.assertEqual(payload["model_id"], "eleven_flash_v2_5")
         self.assertEqual(payload["language_code"], "en")

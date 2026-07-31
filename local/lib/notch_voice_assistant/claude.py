@@ -69,6 +69,17 @@ def sanitize_for_speech(text: str, limit: int = 1200) -> str:
     return f"{summary}. The complete answer is in the transcript."
 
 
+def first_spoken_sentence(text: str, minimum_chars: int = 20) -> tuple[str, int] | None:
+    match = re.match(
+        rf"(?s)^(.{{{minimum_chars},}}?[.!?][\"'”’)\]]*)(?=\s|$)",
+        text,
+    )
+    if match is None:
+        return None
+    spoken = sanitize_for_speech(match.group(1))
+    return (spoken, match.end()) if spoken else None
+
+
 class ClaudeRunner:
     def __init__(self, claude_bin: Path = CLAUDE_BIN) -> None:
         self.claude_bin = claude_bin

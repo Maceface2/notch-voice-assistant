@@ -10,7 +10,13 @@ import time
 from pathlib import Path
 
 from .audio import AudioUnavailable, SpeechServices, VoiceRecorder
-from .claude import ClaudeResult, ClaudeRunner, friendly_tool_status, sanitize_for_speech
+from .claude import (
+    ClaudeResult,
+    ClaudeRunner,
+    first_spoken_sentence,
+    friendly_tool_status,
+    sanitize_for_speech,
+)
 from .state import (
     AssistantState,
     CLAUDE_BIN,
@@ -52,6 +58,10 @@ class VoiceAssistantApplication:
         self.last_activity = time.monotonic()
         self.last_tool_spoken_at = 0.0
         self.current_reply = ""
+        self.early_speech_thread: threading.Thread | None = None
+        self.early_speech_source = ""
+        self.early_speech_degraded: str | None = None
+        self.early_speech_error: str | None = None
         self.animation_generation = 0
         self.control_socket: socket.socket | None = None
         self.control_thread: threading.Thread | None = None
@@ -374,6 +384,10 @@ class VoiceAssistantApplication:
         self.preferences.messages = self.preferences.messages[-12:]
         self.preferences.save()
         self.current_reply = ""
+        self.early_speech_thread = None
+        self.early_speech_source = ""
+        self.early_speech_degraded = None
+        self.early_speech_error = None
         self._render_transcript(pending_reply=True)
         self._set_state(AssistantState.THINKING, "Claude is thinking…")
 
@@ -405,7 +419,34 @@ class VoiceAssistantApplication:
             return False
         self.current_reply += delta
         self._render_transcript(pending_reply=True)
+        self._start_early_speech(generation)
         return False
+
+    def _start_early_speech(self, generation: int) -> None:
+        if self.preferences.muted or self.early_speech_thread is not None:
+            return
+        sentence = first_spoken_sentence(self.current_reply)
+        if sentence is None:
+            return
+        speech_text, source_chars = sentence
+        self.early_speech_source = self.current_reply[:source_chars]
+        self._set_state(AssistantState.SPEAKING, "Speaking while Claude finishes…")
+        thread = threading.Thread(
+            target=self._speak_early_reply,
+            args=(generation, speech_text),
+            name="voice-first-sentence",
+            daemon=True,
+        )
+        self.early_speech_thread = thread
+        thread.start()
+
+    def _speak_early_reply(self, generation: int, text: str) -> None:
+        if generation != self.generation or self.preferences.muted:
+            return
+        try:
+            self.early_speech_degraded = self.speech.speak(text)
+        except Exception as error:
+            self.early_speech_error = str(error)
 
     def _tool_started(self, generation: int, tool_name: str) -> bool:
         if generation != self.generation:
@@ -467,11 +508,23 @@ class VoiceAssistantApplication:
             return False
 
         self._set_state(AssistantState.SPEAKING, "Speaking…")
-        speech_text = sanitize_for_speech(reply)
+        remaining_reply = reply
+        if self.early_speech_source and reply.startswith(self.early_speech_source):
+            remaining_reply = reply[len(self.early_speech_source) :].lstrip()
+        speech_text = sanitize_for_speech(remaining_reply)
+        early_thread = self.early_speech_thread
 
         def speak_final() -> None:
             try:
-                degraded = self.speech.speak(speech_text)
+                if early_thread is not None:
+                    early_thread.join()
+                if generation != self.generation:
+                    return
+                if self.early_speech_error:
+                    raise AudioUnavailable(self.early_speech_error)
+                degraded = self.early_speech_degraded
+                if speech_text and not self.preferences.muted:
+                    degraded = self.speech.speak(speech_text) or degraded
                 self.GLib.idle_add(self._speech_finished, generation, degraded)
             except Exception as error:
                 self.GLib.idle_add(self._speech_failed, generation, str(error))

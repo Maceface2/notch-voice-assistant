@@ -6,6 +6,10 @@ readonly DATA_ROOT="${XDG_DATA_HOME:-${HOME}/.local/share}"
 readonly PACKAGE_ROOT="${NOTCH_VOICE_PACKAGE_ROOT:-${HOME}/.local/lib}"
 readonly VENV_PYTHON="${DATA_ROOT}/notch-voice-assistant/venv/bin/python"
 
+if (( $# == 0 )); then
+    set -- toggle
+fi
+
 if [[ -x "$VENV_PYTHON" ]]; then
     VENV_SITE="$("$VENV_PYTHON" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
     readonly VENV_SITE
@@ -21,8 +25,8 @@ if [[ -x "$VENV_PYTHON" ]]; then
         joined_library_paths="$(IFS=:; printf '%s' "${library_paths[*]}")"
         export LD_LIBRARY_PATH="${joined_library_paths}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
     fi
-    exec "$VENV_PYTHON" -m notch_voice_assistant.cli "${1:-toggle}"
+    exec "$VENV_PYTHON" -m notch_voice_assistant.cli "$@"
 fi
 
 export PYTHONPATH="${PACKAGE_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
-exec /usr/bin/python3 -m notch_voice_assistant.cli "${1:-toggle}"
+exec /usr/bin/python3 -m notch_voice_assistant.cli "$@"

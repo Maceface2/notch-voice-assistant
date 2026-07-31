@@ -12,9 +12,9 @@ from typing import Any
 from .state import ELEVENLABS_CONFIG_PATH, atomic_json_write
 
 
-DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
+DEFAULT_VOICE_ID = "cgSgspJ2msm6clMCkdW9"
 DEFAULT_MODEL_ID = "eleven_flash_v2_5"
-DEFAULT_OUTPUT_FORMAT = "mp3_22050_32"
+DEFAULT_OUTPUT_FORMAT = "mp3_44100_128"
 API_ROOT = "https://api.elevenlabs.io"
 
 
@@ -116,7 +116,7 @@ class ElevenLabsSynthesizer:
                 request,
                 timeout=self.REQUEST_TIMEOUT_SECONDS,
             ) as response:
-                while chunk := response.read(16 * 1024):
+                while chunk := response.read1(4 * 1024):
                     on_chunk(chunk)
         except ElevenLabsCancelled:
             raise
