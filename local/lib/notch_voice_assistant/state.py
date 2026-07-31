@@ -28,7 +28,7 @@ COQUI_PYTHON = COQUI_VENV_DIR / "bin/python"
 COQUI_MODEL_DIR = MODELS_DIR / "coqui"
 COQUI_READY_PATH = DATA_DIR / "coqui-ready.json"
 STYLE_PATH = CONFIG_ROOT / APP_NAME / "style.css"
-ICON_PATH = CONFIG_ROOT / APP_NAME / "anthropic.png"
+ICON_PATH = CONFIG_ROOT / APP_NAME / "claude.png"
 WHISPER_DEVICE_PATH = CONFIG_ROOT / APP_NAME / "whisper-device"
 CLAUDE_BIN = Path(
     os.environ.get(
@@ -145,7 +145,7 @@ def status_payload(
         tooltip_lines.append(degraded)
     tooltip_lines.append("Click to toggle")
     return {
-        "text": "AI",
+        "text": "✳",
         "class": [state.value, "open" if visible else "closed"],
         "tooltip": "\n".join(tooltip_lines),
         "state": state.value,

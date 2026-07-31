@@ -1,3 +1,7 @@
+.modules-center {
+  min-width: 410px;
+}
+
 #custom-voice-assistant {
   border-radius: 999px;
   margin: 0 4px;
@@ -5,7 +9,7 @@
   min-width: 18px;
   color: transparent;
   background-color: #050505;
-  background-image: url("anthropic.png");
+  background-image: url("claude.png");
   background-repeat: no-repeat;
   background-position: center;
   background-size: 18px 18px;

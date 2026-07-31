@@ -28,7 +28,7 @@ SERVICE_NAME = "notch-voice-assistant.service"
 def print_waybar_status() -> int:
     status = read_status()
     output = {
-        "text": status.get("text", "AI"),
+        "text": status.get("text", "✳"),
         "class": status.get("class", ["idle", "closed"]),
         "tooltip": status.get("tooltip", "Claude voice assistant\nClick to open"),
     }

@@ -9,17 +9,16 @@ window#notch-voice-assistant {
   background: transparent;
 }
 
-.notch-connector {
+.notch-seam {
   background: #050505;
-  border-radius: 0 0 7px 7px;
 }
 
 .assistant-card {
   background: #050505;
-  border-radius: 0 0 18px 18px;
+  border-radius: 0 0 8px 8px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-top: none;
-  padding: 16px 18px 18px;
+  padding: 13px 14px 16px;
   box-shadow: none;
 }
 
@@ -27,7 +26,7 @@ window#notch-voice-assistant {
   min-height: 34px;
 }
 
-.anthropic-icon {
+.claude-icon {
   margin-right: 2px;
   min-width: 22px;
   font-weight: 800;
@@ -69,7 +68,7 @@ combobox button {
   color: #ffffff;
   border: none;
   border-radius: 999px;
-  padding: 7px 12px;
+  padding: 7px 10px;
   box-shadow: none;
   font-weight: 700;
 }

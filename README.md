@@ -5,8 +5,8 @@ Waybar/Niri desktop.
 
 The [`prototype-v0`](https://github.com/Maceface2/notch-voice-assistant/tree/prototype-v0)
 tag captures the original working Nobara workstation prototype. The main
-branch is the portable first iteration. Clicking the Anthropic mark in Waybar
-slides a top-center GTK layer-shell panel directly out of the notch and starts
+branch is the portable first iteration. Clicking the Claude starburst in Waybar
+grows the center notch into a top-center GTK layer-shell panel and starts
 a conversational loop:
 
 1. PipeWire records speech into memory.
@@ -20,8 +20,8 @@ disk.
 
 ## Prototype features
 
-- Animated GTK layer-shell panel visually attached to the Waybar notch
-- Anthropic mark in Waybar and the panel header
+- Animated GTK layer-shell panel that expands the Waybar notch as one rectangle
+- Claude starburst in Waybar and the panel header
 - Voice-activity detection and automatic end-of-utterance detection
 - CUDA `distil-large-v3` transcription with a CPU `small.en` fallback
 - Persistent, resumable Claude Code sessions
@@ -37,9 +37,9 @@ disk.
 
 | Action | Result |
 | --- | --- |
-| Left-click Waybar Anthropic mark | Expand/collapse; opening immediately listens |
-| Right-click Waybar Anthropic mark | Stop the conversational loop |
-| Middle-click Waybar Anthropic mark | Start a new Claude session |
+| Left-click Waybar Claude starburst | Expand/collapse; opening immediately listens |
+| Right-click Waybar Claude starburst | Stop the conversational loop |
+| Middle-click Waybar Claude starburst | Start a new Claude session |
 | **Listen** / **Stop** in the popover | Start or stop the loop |
 | **Sonnet** / **Opus** selector | Choose the model for the next turn |
 | Speaker button | Mute or unmute speech |
@@ -76,7 +76,7 @@ files without recreating or downloading the speech environment.
 
 Merge the snippets under [`integrations/waybar`](integrations/waybar) into the
 Waybar configuration and stylesheet, then reload Waybar. The installer copies
-`anthropic.png` into `~/.config/waybar` for the relative CSS image reference.
+`claude.png` into `~/.config/waybar` for the relative CSS image reference.
 
 The service is not enabled at login. The first Waybar click starts it, and it
 exits after ten hidden-idle minutes.
@@ -86,6 +86,8 @@ fallback. It can also be overridden per launch with
 `NOTCH_VOICE_WHISPER_DEVICE=cpu` or `NOTCH_VOICE_WHISPER_DEVICE=cuda`.
 The panel assumes Waybar has an 8px transparent bottom margin; set
 `NOTCH_VOICE_TOP_OFFSET` if a different bar geometry needs another overlap.
+Its default width is 446px to match the reference center notch; set
+`NOTCH_VOICE_WIDTH` when a different Waybar layout needs another width.
 
 ## Verification
 
@@ -112,16 +114,15 @@ always left for manual removal.
 - [Coqui TTS](https://github.com/coqui-ai/TTS) provides synthesis. The selected
   `tts_models/en/ljspeech/vits` model is Coqui's single-speaker American English
   LJSpeech VITS release.
-- The Anthropic mark is sourced from Anthropic's
-  [verified GitHub organization](https://github.com/anthropics) and remains an
-  Anthropic trademark.
+- The Claude starburst is sourced from the official
+  [Claude website](https://claude.ai/) and remains an Anthropic trademark.
 
 ## Iteration status
 
 - [x] Replace workstation-specific paths with runtime discovery
 - [x] Add a repeatable installer and conservative uninstaller
 - [x] Improve model setup and GPU/CPU fallback behavior
-- [x] Add animated notch attachment and Anthropic visual identity
+- [x] Add a same-width animated notch expansion and Claude visual identity
 - [x] Replace Piper with an isolated persistent Coqui American voice
 - [ ] Formalize Python packaging and dependency metadata
 - [ ] Add barge-in so speaking can be interrupted naturally

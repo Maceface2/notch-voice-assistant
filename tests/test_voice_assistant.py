@@ -60,7 +60,7 @@ class StatusTests(unittest.TestCase):
             visible=True,
         )
         self.assertEqual(payload["state"], "listening")
-        self.assertEqual(payload["text"], "AI")
+        self.assertEqual(payload["text"], "✳")
         self.assertEqual(payload["class"], ["listening", "open"])
         self.assertIn("Click to toggle", payload["tooltip"])
 

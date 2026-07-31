@@ -33,7 +33,13 @@ class VoiceAssistantApplication:
     TOOL_SPEECH_INTERVAL = 8
 
     def __init__(self) -> None:
-        self.Gtk, self.GLib, self.GtkLayerShell, self.GdkPixbuf = self._load_gtk()
+        (
+            self.Gtk,
+            self.GLib,
+            self.GtkLayerShell,
+            self.GdkPixbuf,
+            self.Pango,
+        ) = self._load_gtk()
         self.preferences = SessionPreferences.load()
         self.claude = ClaudeRunner()
         self.speech = SpeechServices()
@@ -58,9 +64,9 @@ class VoiceAssistantApplication:
         gi.require_version("Gtk", "3.0")
         gi.require_version("GtkLayerShell", "0.1")
         gi.require_version("GdkPixbuf", "2.0")
-        from gi.repository import GdkPixbuf, GLib, Gtk, GtkLayerShell
+        from gi.repository import GdkPixbuf, GLib, Gtk, GtkLayerShell, Pango
 
-        return Gtk, GLib, GtkLayerShell, GdkPixbuf
+        return Gtk, GLib, GtkLayerShell, GdkPixbuf, Pango
 
     def _build_window(self) -> None:
         Gtk = self.Gtk
@@ -71,7 +77,11 @@ class VoiceAssistantApplication:
         self.window.set_title("Claude Voice Assistant")
         self.window.set_decorated(False)
         self.window.set_resizable(False)
-        self.window.set_size_request(640, -1)
+        try:
+            notch_width = int(os.environ.get("NOTCH_VOICE_WIDTH", "446"))
+        except ValueError:
+            notch_width = 446
+        self.window.set_size_request(max(360, notch_width), -1)
         self.window.connect("delete-event", self._on_delete)
         self.window.connect("key-press-event", self._on_key_press)
 
@@ -79,8 +89,8 @@ class VoiceAssistantApplication:
         layer_shell.set_namespace(self.window, "notch-voice-assistant")
         layer_shell.set_layer(self.window, layer_shell.Layer.OVERLAY)
         layer_shell.set_anchor(self.window, layer_shell.Edge.TOP, True)
-        # Pull into Waybar's transparent bottom margin so the connector
-        # visually grows from the notch. Other bar geometries can override it.
+        # Pull into Waybar's transparent bottom margin so the revealed rectangle
+        # begins at the visual bottom of the center notch.
         try:
             top_offset = int(os.environ.get("NOTCH_VOICE_TOP_OFFSET", "-8"))
         except ValueError:
@@ -95,11 +105,12 @@ class VoiceAssistantApplication:
         shell.get_style_context().add_class("assistant-shell")
         self.window.add(shell)
 
-        connector = Gtk.Box()
-        connector.set_size_request(56, 9)
-        connector.set_halign(Gtk.Align.CENTER)
-        connector.get_style_context().add_class("notch-connector")
-        shell.pack_start(connector, False, False, 0)
+        # A one-pixel full-width seam keeps the layer surface mapped while the
+        # revealer is closed. It is hidden directly behind the Waybar notch.
+        seam = Gtk.Box()
+        seam.set_size_request(-1, 1)
+        seam.get_style_context().add_class("notch-seam")
+        shell.pack_start(seam, False, False, 0)
 
         self.revealer = Gtk.Revealer()
         self.revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
@@ -124,8 +135,8 @@ class VoiceAssistantApplication:
             )
             brand_icon = Gtk.Image.new_from_pixbuf(brand_pixbuf)
         else:
-            brand_icon = Gtk.Label(label="AI")
-        brand_icon.get_style_context().add_class("anthropic-icon")
+            brand_icon = Gtk.Label(label="✳")
+        brand_icon.get_style_context().add_class("claude-icon")
         header.pack_start(brand_icon, False, False, 0)
 
         self.status_dot = Gtk.Label(label="●")
@@ -133,6 +144,8 @@ class VoiceAssistantApplication:
         header.pack_start(self.status_dot, False, False, 0)
 
         self.status_label = Gtk.Label(label="Ready", xalign=0)
+        self.status_label.set_max_width_chars(13)
+        self.status_label.set_ellipsize(self.Pango.EllipsizeMode.END)
         self.status_label.get_style_context().add_class("status-label")
         header.pack_start(self.status_label, True, True, 0)
 

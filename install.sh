@@ -72,11 +72,11 @@ install_application() {
         "${SOURCE_ROOT}/config/notch-voice-assistant/style.css" \
         "$(staged_path "${CONFIG_HOME}/${APP_NAME}/style.css")"
     install -m 0644 \
-        "${SOURCE_ROOT}/assets/anthropic.png" \
-        "$(staged_path "${CONFIG_HOME}/${APP_NAME}/anthropic.png")"
+        "${SOURCE_ROOT}/assets/claude.png" \
+        "$(staged_path "${CONFIG_HOME}/${APP_NAME}/claude.png")"
     install -m 0644 \
-        "${SOURCE_ROOT}/assets/anthropic.png" \
-        "$(staged_path "${CONFIG_HOME}/waybar/anthropic.png")"
+        "${SOURCE_ROOT}/assets/claude.png" \
+        "$(staged_path "${CONFIG_HOME}/waybar/claude.png")"
     install -m 0644 \
         "${SOURCE_ROOT}/config/systemd/user/${APP_NAME}.service" \
         "$(staged_path "${CONFIG_HOME}/systemd/user/${APP_NAME}.service")"
