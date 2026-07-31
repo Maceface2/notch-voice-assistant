@@ -9,7 +9,7 @@ from typing import Callable
 
 import numpy as np
 
-from .fish_s2 import FishS2Synthesizer
+from .fish_s2 import FishS2Cancelled, FishS2Synthesizer
 from .state import MODELS_DIR, WHISPER_DEVICE_PATH
 
 
@@ -259,26 +259,54 @@ class SpeechServices:
             return None
         with self._speech_lock:
             generation = self._speech_generation
+            playback_started = False
             try:
-                wav_bytes = self.synthesize_wav(text)
-                if generation != self._speech_generation:
-                    return None
-                process = subprocess.Popen(
-                    ["aplay", "-q"],
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.PIPE,
-                    start_new_session=True,
-                )
-                self._playback_process = process
-                _stdout, stderr = process.communicate(wav_bytes)
+                def play_chunk(chunk: bytes, sample_rate: int) -> None:
+                    nonlocal playback_started
+                    if generation != self._speech_generation:
+                        raise FishS2Cancelled()
+                    process = self._playback_process
+                    if process is None:
+                        process = subprocess.Popen(
+                            [
+                                "aplay",
+                                "-q",
+                                "-f",
+                                "S16_LE",
+                                "-r",
+                                str(sample_rate),
+                                "-c",
+                                "1",
+                            ],
+                            stdin=subprocess.PIPE,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.PIPE,
+                            start_new_session=True,
+                        )
+                        self._playback_process = process
+                        playback_started = True
+                    if process.stdin is None:
+                        raise AudioUnavailable("The audio player closed its input.")
+                    process.stdin.write(chunk)
+
+                self.fish_s2.stream_pcm(text, play_chunk)
+                process = self._playback_process
+                if process is None:
+                    raise AudioUnavailable("Fish Audio S2 Pro returned no audio.")
+                if process.stdin is not None:
+                    process.stdin.close()
+                process.wait()
+                stderr = process.stderr.read() if process.stderr is not None else b""
                 self._playback_process = None
                 if process.returncode:
                     raise AudioUnavailable(stderr.decode(errors="replace").strip())
                 return None
+            except FishS2Cancelled:
+                self._playback_process = None
+                return None
             except Exception as fish_s2_error:
                 self._playback_process = None
-                if generation != self._speech_generation:
+                if generation != self._speech_generation or playback_started:
                     return None
                 try:
                     process = subprocess.Popen(
@@ -317,6 +345,19 @@ class SpeechServices:
         threading.Thread(
             target=self.fish_s2.close,
             name="fish-s2-release",
+            daemon=True,
+        ).start()
+
+    def prewarm_tts_in_background(self) -> None:
+        def prewarm() -> None:
+            try:
+                self.fish_s2.prewarm()
+            except Exception:
+                pass
+
+        threading.Thread(
+            target=prewarm,
+            name="fish-s2-prewarm",
             daemon=True,
         ).start()
 

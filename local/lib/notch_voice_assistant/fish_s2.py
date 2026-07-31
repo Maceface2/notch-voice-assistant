@@ -10,7 +10,7 @@ import urllib.error
 import urllib.request
 import uuid
 from collections import deque
-from pathlib import Path
+from collections.abc import Callable
 
 from .state import (
     FISH_S2_BINARY,
@@ -34,6 +34,10 @@ class FishS2Unavailable(RuntimeError):
     pass
 
 
+class FishS2Cancelled(RuntimeError):
+    pass
+
+
 class FishS2Synthesizer:
     """Persistent bridge to the local s2.cpp HTTP inference server."""
 
@@ -52,33 +56,7 @@ class FishS2Synthesizer:
             if self._port is None:
                 raise FishS2Unavailable("Fish Audio S2 Pro server did not start.")
 
-            fields = {
-                "text": text,
-                "params": json.dumps(
-                    {
-                        "stream": True,
-                        "segment_sentences": True,
-                        "sentence_pause_ms": 150,
-                        "max_new_tokens": 768,
-                        "temperature": 0.58,
-                        "top_p": 0.88,
-                        "top_k": 40,
-                    },
-                    separators=(",", ":"),
-                ),
-            }
-            files: dict[str, tuple[str, str, bytes]] = {}
-            if FISH_S2_VOICE_PATH.is_file():
-                fields["voice"] = FISH_S2_VOICE_PATH.stem
-                fields["voice_dir"] = str(FISH_S2_VOICE_DIR)
-            elif FISH_S2_REFERENCE_PATH.is_file():
-                fields["reference_text"] = REFERENCE_TEXT
-                files["reference"] = (
-                    FISH_S2_REFERENCE_PATH.name,
-                    "audio/wav",
-                    FISH_S2_REFERENCE_PATH.read_bytes(),
-                )
-
+            fields, files = self._request_parts(text, streaming=False)
             body, content_type = self._multipart_body(fields, files)
             request = urllib.request.Request(
                 f"http://127.0.0.1:{self._port}/generate",
@@ -100,6 +78,93 @@ class FishS2Synthesizer:
             if not wav_bytes.startswith(b"RIFF") or b"WAVE" not in wav_bytes[:16]:
                 raise FishS2Unavailable("Fish Audio S2 Pro returned invalid WAV audio.")
             return wav_bytes
+
+    def stream_pcm(
+        self,
+        text: str,
+        on_chunk: Callable[[bytes, int], None],
+    ) -> None:
+        with self._lock:
+            self._ensure_server()
+            if self._port is None:
+                raise FishS2Unavailable("Fish Audio S2 Pro server did not start.")
+
+            fields, files = self._request_parts(text, streaming=True)
+            body, content_type = self._multipart_body(fields, files)
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{self._port}/generate",
+                data=body,
+                headers={"Content-Type": content_type},
+                method="POST",
+            )
+            try:
+                with urllib.request.urlopen(
+                    request,
+                    timeout=self.SYNTHESIS_TIMEOUT_SECONDS,
+                ) as response:
+                    sample_rate = int(response.headers.get("X-Audio-Sample-Rate", "44100"))
+                    while chunk := response.read(64 * 1024):
+                        on_chunk(chunk, sample_rate)
+            except FishS2Cancelled:
+                raise
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError) as error:
+                detail = self._server_error()
+                self._stop_server()
+                raise FishS2Unavailable(detail or str(error)) from error
+
+    def prewarm(self) -> None:
+        with self._lock:
+            self._ensure_server()
+
+    @staticmethod
+    def _generation_params(*, streaming: bool) -> dict[str, object]:
+        params: dict[str, object] = {
+            "stream": True,
+            "segment_sentences": True,
+            "sentence_pause_ms": 150,
+            "max_new_tokens": 768,
+            "temperature": 0.58,
+            "top_p": 0.88,
+            "top_k": 40,
+        }
+        if streaming:
+            params.update(
+                {
+                    "chunked": True,
+                    "output_format": "pcm_s16le",
+                    "stream_start_buffer_ms": 1200,
+                }
+            )
+        if os.environ.get("NOTCH_VOICE_FISH_S2_BACKEND", "vulkan").lower() != "cpu":
+            params["codec_follow_backend"] = True
+            params["codec_auto_backend"] = False
+        return params
+
+    def _request_parts(
+        self,
+        text: str,
+        *,
+        streaming: bool,
+    ) -> tuple[dict[str, str], dict[str, tuple[str, str, bytes]]]:
+        fields = {
+            "text": text,
+            "params": json.dumps(
+                self._generation_params(streaming=streaming),
+                separators=(",", ":"),
+            ),
+        }
+        files: dict[str, tuple[str, str, bytes]] = {}
+        if FISH_S2_VOICE_PATH.is_file():
+            fields["voice"] = FISH_S2_VOICE_PATH.stem
+            fields["voice_dir"] = str(FISH_S2_VOICE_DIR)
+        elif FISH_S2_REFERENCE_PATH.is_file():
+            fields["reference_text"] = REFERENCE_TEXT
+            files["reference"] = (
+                FISH_S2_REFERENCE_PATH.name,
+                "audio/wav",
+                FISH_S2_REFERENCE_PATH.read_bytes(),
+            )
+        return fields, files
 
     def _ensure_server(self) -> None:
         if self._process is not None and self._process.poll() is None:
@@ -132,9 +197,9 @@ class FishS2Synthesizer:
             "warn",
         ]
         if backend == "vulkan":
-            command.extend(["--vulkan", "0"])
+            command.extend(["--vulkan", "0", "--codec-follow-backend"])
         elif backend == "cuda":
-            command.extend(["--cuda", "0"])
+            command.extend(["--cuda", "0", "--codec-follow-backend"])
         elif backend != "cpu":
             raise FishS2Unavailable(
                 "NOTCH_VOICE_FISH_S2_BACKEND must be vulkan, cuda, or cpu."

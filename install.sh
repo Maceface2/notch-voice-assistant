@@ -124,7 +124,7 @@ install_fish_s2_stack() {
     local binary_dir="${fish_root}/bin"
     local model_dir="${models}/fish-s2"
     local voice_dir="${fish_root}/voices"
-    local model_path="${model_dir}/s2-pro-q6_k.gguf"
+    local model_path="${model_dir}/s2-pro-q4_k_m.gguf"
     local tokenizer_path="${model_dir}/tokenizer.json"
     local reference_path="${fish_root}/american-reference.wav"
     local ready_path="${DATA_HOME}/${APP_NAME}/fish-s2-ready.json"
@@ -161,7 +161,7 @@ install_fish_s2_stack() {
 
     "$assistant_venv/bin/hf" download \
         rodrigomt/s2-pro-gguf \
-        s2-pro-q6_k.gguf \
+        s2-pro-q4_k_m.gguf \
         tokenizer.json \
         --local-dir "$model_dir"
 
@@ -177,9 +177,10 @@ install_fish_s2_stack() {
             --text "Fish Audio S2 Pro is ready." \
             --output "$ready_wav" \
             --vulkan 0 \
+            --codec-follow-backend \
             --log-level warn
     fi
-    printf '{"runtime":"s2.cpp","model":"s2-pro-q6_k.gguf","voice":"notch-voice"}\n' \
+    printf '{"runtime":"s2.cpp","model":"s2-pro-q4_k_m.gguf","voice":"notch-voice"}\n' \
         >"$ready_temporary"
     mv -- "$ready_temporary" "$ready_path"
 }
@@ -214,6 +215,9 @@ elif [[ "$cpu_only" == true ]]; then
 fi
 
 systemctl --user daemon-reload
+if systemctl --user is-active --quiet "${APP_NAME}.service"; then
+    systemctl --user restart "${APP_NAME}.service"
+fi
 warn_for_missing_system_dependencies
 
 printf '\nInstalled %s.\n' "$APP_NAME"

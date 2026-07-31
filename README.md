@@ -28,7 +28,9 @@ disk.
 - Persistent, resumable Claude Code sessions
 - Sonnet by default with an Opus selector
 - Spoken tool-status updates and final answers
-- Persistent Fish Audio S2 Pro Q6_K server using the Vulkan `s2.cpp` runtime
+- Persistent Fish Audio S2 Pro Q4_K_M server using the Vulkan `s2.cpp` runtime
+- Background model prewarming and chunked PCM playback for lower first-audio
+  latency
 - Reusable local voice profile with an American English default
 - eSpeak fallback if Fish Audio S2 Pro is unavailable
 - Waybar state indicators for listening, transcribing, thinking, acting,
@@ -68,7 +70,8 @@ The command creates the profile atomically and writes a
 - `git`, CMake, `glslc`, SPIR-V/Vulkan headers, and Vulkan loader development
   files
 - Claude Code available on `PATH` or at `~/.local/bin/claude`
-- A Vulkan-capable GPU; the selected Q6_K model needs roughly 8–9GB VRAM
+- A Vulkan-capable GPU; the selected Q4_K_M model runs fully on the tested
+  12GB RTX 4070
 
 Distribution packages provide the GTK, layer-shell, GStreamer, and PipeWire
 bindings. The main Python speech stack is installed in a user-local virtual
@@ -95,9 +98,11 @@ Use `./install.sh --cpu-only` to skip the NVIDIA Python runtime and pin Whisper
 to its CPU backend. `./install.sh --app-only` updates just the application
 files without recreating or downloading the speech environment.
 
-The default Fish model is the 4.5GB `s2-pro-q6_k.gguf` quantization. The model
-weights use the Fish Audio Research License: research and non-commercial use
-is permitted, while commercial use requires a separate Fish Audio license.
+The default Fish model is the 3.6GB `s2-pro-q4_k_m.gguf` quantization. It was
+selected because both its transformer and codec stay on the GPU in the tested
+setup. The model weights use the Fish Audio Research License: research and
+non-commercial use is permitted, while commercial use requires a separate
+Fish Audio license.
 
 Merge the snippets under [`integrations/waybar`](integrations/waybar) into the
 Waybar configuration and stylesheet, then reload Waybar. The installer copies
@@ -144,7 +149,7 @@ always left for manual removal.
 - [Fish Audio S2 Pro](https://huggingface.co/fishaudio/s2-pro) provides
   synthesis through the community [s2.cpp](https://github.com/rodrigomatta/s2.cpp)
   Vulkan engine and the linked
-  [Q6_K GGUF](https://huggingface.co/rodrigomt/s2-pro-gguf).
+  [Q4_K_M GGUF](https://huggingface.co/rodrigomt/s2-pro-gguf).
 - The bundled synthetic American English reference was generated once with
   [Coqui TTS](https://github.com/coqui-ai/TTS); Coqui is not installed or used
   at runtime.
@@ -157,7 +162,7 @@ always left for manual removal.
 - [x] Add a repeatable installer and conservative uninstaller
 - [x] Improve model setup and GPU/CPU fallback behavior
 - [x] Add a same-width animated notch expansion and Claude visual identity
-- [x] Replace Coqui with persistent Fish Audio S2 Pro Q6_K synthesis
+- [x] Replace Coqui with persistent Fish Audio S2 Pro Q4_K_M synthesis
 - [ ] Formalize Python packaging and dependency metadata
 - [ ] Add barge-in so speaking can be interrupted naturally
 - [ ] Expand state-machine and failure-path tests

@@ -100,6 +100,17 @@ class SpeechServiceTests(unittest.TestCase):
         self.assertIn(b'filename="voice.wav"', body)
         self.assertIn(b"RIFFtest", body)
 
+    def test_fish_s2_streaming_uses_pcm_and_gpu_codec(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {"NOTCH_VOICE_FISH_S2_BACKEND": "vulkan"},
+        ):
+            params = FishS2Synthesizer._generation_params(streaming=True)
+        self.assertTrue(params["chunked"])
+        self.assertEqual(params["output_format"], "pcm_s16le")
+        self.assertTrue(params["codec_follow_backend"])
+        self.assertFalse(params["codec_auto_backend"])
+
     def test_set_voice_rejects_a_missing_reference(self) -> None:
         self.assertEqual(
             set_voice("/definitely/missing/reference.wav", "Exact transcript."),

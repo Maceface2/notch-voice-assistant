@@ -79,7 +79,7 @@ def doctor() -> int:
         "Fish Audio S2 Pro runtime": (
             FISH_S2_BINARY.is_file() and os.access(FISH_S2_BINARY, os.X_OK)
         ),
-        "Fish Audio S2 Pro Q6_K": FISH_S2_MODEL_PATH.is_file(),
+        "Fish Audio S2 Pro Q4_K_M": FISH_S2_MODEL_PATH.is_file(),
         "Fish S2 voice profile": (
             FISH_S2_READY_PATH.is_file() and FISH_S2_VOICE_PATH.is_file()
         ),
@@ -167,9 +167,9 @@ def set_voice(audio_path: str, transcript: str) -> int:
         "warn",
     ]
     if backend == "vulkan":
-        command.extend(["--vulkan", "0"])
+        command.extend(["--vulkan", "0", "--codec-follow-backend"])
     elif backend == "cuda":
-        command.extend(["--cuda", "0"])
+        command.extend(["--cuda", "0", "--codec-follow-backend"])
 
     result = subprocess.run(command)
     if result.returncode or not pending_path.is_file():
