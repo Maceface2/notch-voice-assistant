@@ -9,7 +9,10 @@ from typing import Callable
 
 import numpy as np
 
-from .fish_s2 import FishS2Cancelled, FishS2Synthesizer
+from .elevenlabs import (
+    ElevenLabsCancelled,
+    ElevenLabsSynthesizer,
+)
 from .state import MODELS_DIR, WHISPER_DEVICE_PATH
 
 
@@ -169,7 +172,7 @@ class SpeechServices:
     def __init__(self) -> None:
         self.whisper_model = None
         self.whisper_backend = ""
-        self.fish_s2 = FishS2Synthesizer()
+        self.elevenlabs = ElevenLabsSynthesizer()
         self._model_lock = threading.Lock()
         self._speech_lock = threading.Lock()
         self._playback_process: subprocess.Popen[bytes] | None = None
@@ -251,9 +254,6 @@ class SpeechServices:
             )
         return " ".join(segment.text.strip() for segment in segments).strip()
 
-    def synthesize_wav(self, text: str) -> bytes:
-        return self.fish_s2.synthesize_wav(text)
-
     def speak(self, text: str) -> str | None:
         if not text:
             return None
@@ -261,22 +261,29 @@ class SpeechServices:
             generation = self._speech_generation
             playback_started = False
             try:
-                def play_chunk(chunk: bytes, sample_rate: int) -> None:
+                def play_chunk(chunk: bytes) -> None:
                     nonlocal playback_started
                     if generation != self._speech_generation:
-                        raise FishS2Cancelled()
+                        raise ElevenLabsCancelled()
                     process = self._playback_process
                     if process is None:
                         process = subprocess.Popen(
                             [
-                                "aplay",
-                                "-q",
-                                "-f",
-                                "S16_LE",
-                                "-r",
-                                str(sample_rate),
-                                "-c",
-                                "1",
+                                "ffplay",
+                                "-nodisp",
+                                "-autoexit",
+                                "-loglevel",
+                                "error",
+                                "-fflags",
+                                "nobuffer",
+                                "-flags",
+                                "low_delay",
+                                "-probesize",
+                                "32",
+                                "-analyzeduration",
+                                "0",
+                                "-i",
+                                "pipe:0",
                             ],
                             stdin=subprocess.PIPE,
                             stdout=subprocess.DEVNULL,
@@ -289,10 +296,10 @@ class SpeechServices:
                         raise AudioUnavailable("The audio player closed its input.")
                     process.stdin.write(chunk)
 
-                self.fish_s2.stream_pcm(text, play_chunk)
+                self.elevenlabs.stream_mp3(text, play_chunk)
                 process = self._playback_process
                 if process is None:
-                    raise AudioUnavailable("Fish Audio S2 Pro returned no audio.")
+                    raise AudioUnavailable("ElevenLabs returned no audio.")
                 if process.stdin is not None:
                     process.stdin.close()
                 process.wait()
@@ -301,10 +308,10 @@ class SpeechServices:
                 if process.returncode:
                     raise AudioUnavailable(stderr.decode(errors="replace").strip())
                 return None
-            except FishS2Cancelled:
+            except ElevenLabsCancelled:
                 self._playback_process = None
                 return None
-            except Exception as fish_s2_error:
+            except Exception as elevenlabs_error:
                 self._playback_process = None
                 if generation != self._speech_generation or playback_started:
                     return None
@@ -321,14 +328,14 @@ class SpeechServices:
                     if process.returncode:
                         raise AudioUnavailable(stderr.decode(errors="replace").strip())
                     return (
-                        "Fish Audio S2 Pro unavailable; using eSpeak "
-                        f"({fish_s2_error})"
+                        "ElevenLabs unavailable; using eSpeak "
+                        f"({elevenlabs_error})"
                     )
                 except Exception as fallback_error:
                     self._playback_process = None
                     raise AudioUnavailable(
                         "Speech output failed: "
-                        f"{fish_s2_error}; fallback failed: {fallback_error}"
+                        f"{elevenlabs_error}; fallback failed: {fallback_error}"
                     ) from fallback_error
 
     def stop_playback(self) -> None:
@@ -341,26 +348,5 @@ class SpeechServices:
         except ProcessLookupError:
             pass
 
-    def release_tts_in_background(self) -> None:
-        threading.Thread(
-            target=self.fish_s2.close,
-            name="fish-s2-release",
-            daemon=True,
-        ).start()
-
-    def prewarm_tts_in_background(self) -> None:
-        def prewarm() -> None:
-            try:
-                self.fish_s2.prewarm()
-            except Exception:
-                pass
-
-        threading.Thread(
-            target=prewarm,
-            name="fish-s2-prewarm",
-            daemon=True,
-        ).start()
-
     def close(self) -> None:
         self.stop_playback()
-        self.fish_s2.close()

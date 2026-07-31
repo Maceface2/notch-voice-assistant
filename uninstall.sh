@@ -44,6 +44,7 @@ rm -f -- \
     "${CONFIG_HOME}/${APP_NAME}/anthropic.png" \
     "${CONFIG_HOME}/waybar/anthropic.png" \
     "${CONFIG_HOME}/${APP_NAME}/whisper-device" \
+    "${CONFIG_HOME}/${APP_NAME}/elevenlabs.json" \
     "${CONFIG_HOME}/systemd/user/${APP_NAME}.service"
 rmdir -- "${CONFIG_HOME}/${APP_NAME}" 2>/dev/null || true
 remove_app_tree "${USER_HOME}/.local/lib/notch_voice_assistant"

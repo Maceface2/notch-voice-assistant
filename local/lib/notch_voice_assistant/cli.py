@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import importlib.util
 import json
 import os
@@ -10,20 +11,17 @@ import sys
 import time
 from pathlib import Path
 
-from .fish_s2 import REFERENCE_TEXT
+from .elevenlabs import (
+    DEFAULT_MODEL_ID,
+    ElevenLabsSettings,
+    ElevenLabsSynthesizer,
+    ElevenLabsUnavailable,
+)
 from .state import (
     CLAUDE_BIN,
     CONFIG_ROOT,
-    FISH_S2_BINARY,
-    FISH_S2_MODEL_PATH,
-    FISH_S2_READY_PATH,
-    FISH_S2_REFERENCE_PATH,
-    FISH_S2_TOKENIZER_PATH,
-    FISH_S2_VOICE_DIR,
-    FISH_S2_VOICE_PATH,
-    MODELS_DIR,
+    ELEVENLABS_CONFIG_PATH,
     SOCKET_PATH,
-    VENV_DIR,
     read_status,
 )
 
@@ -70,20 +68,16 @@ def send_command(command: str, *, start_service: bool = True) -> int:
 
 
 def doctor() -> int:
+    elevenlabs_settings = ElevenLabsSettings.load()
     checks = {
         "Claude Code": CLAUDE_BIN.is_file() and os.access(CLAUDE_BIN, os.X_OK),
         "GTK layer shell": _gi_available("GtkLayerShell", "0.1"),
         "GStreamer": _gi_available("Gst", "1.0"),
         "faster-whisper": importlib.util.find_spec("faster_whisper") is not None,
         "WebRTC VAD": importlib.util.find_spec("webrtcvad") is not None,
-        "Fish Audio S2 Pro runtime": (
-            FISH_S2_BINARY.is_file() and os.access(FISH_S2_BINARY, os.X_OK)
-        ),
-        "Fish Audio S2 Pro Q4_K_M": FISH_S2_MODEL_PATH.is_file(),
-        "Fish S2 voice profile": (
-            FISH_S2_READY_PATH.is_file() and FISH_S2_VOICE_PATH.is_file()
-        ),
-        "aplay": _command_exists("aplay"),
+        "ElevenLabs API key": bool(elevenlabs_settings.api_key),
+        "ElevenLabs voice": bool(elevenlabs_settings.voice_id),
+        "ffplay": _command_exists("ffplay"),
         "eSpeak fallback": _command_exists("espeak-ng"),
         "User service": (CONFIG_ROOT / "systemd/user" / SERVICE_NAME).is_file(),
     }
@@ -109,75 +103,120 @@ def _command_exists(command: str) -> bool:
     )
 
 
-def set_voice(audio_path: str, transcript: str) -> int:
-    reference = Path(audio_path).expanduser().resolve()
-    transcript = transcript.strip()
-    if not reference.is_file():
-        print(f"Voice reference does not exist: {reference}", file=sys.stderr)
+def configure_elevenlabs() -> int:
+    current = ElevenLabsSettings.load()
+    prompt = "ElevenLabs API key"
+    if current.api_key:
+        prompt += " (Enter keeps the saved key)"
+    api_key = getpass.getpass(f"{prompt}: ").strip() or current.api_key
+    if not api_key:
+        print("An ElevenLabs API key is required.", file=sys.stderr)
         return 2
-    if not transcript:
-        print("The exact transcript of the voice reference is required.", file=sys.stderr)
-        return 2
-    for required in (FISH_S2_BINARY, FISH_S2_MODEL_PATH, FISH_S2_TOKENIZER_PATH):
-        if not required.is_file():
-            print(f"Fish Audio S2 Pro is missing: {required}", file=sys.stderr)
-            return 1
+    try:
+        voices = ElevenLabsSynthesizer.list_voices(api_key)
+    except ElevenLabsUnavailable as error:
+        print(error, file=sys.stderr)
+        return 1
 
-    backend = os.environ.get("NOTCH_VOICE_FISH_S2_BACKEND", "vulkan").lower()
-    if backend not in {"vulkan", "cuda", "cpu"}:
+    _print_voices(voices)
+    available_ids = {
+        str(voice.get("voice_id", "")).strip()
+        for voice in voices
+        if voice.get("voice_id")
+    }
+    recommended = _recommended_voice_id(voices, current.voice_id)
+    voice_id = input(f"Voice ID [{recommended}]: ").strip() or recommended
+    if available_ids and voice_id not in available_ids:
         print(
-            "NOTCH_VOICE_FISH_S2_BACKEND must be vulkan, cuda, or cpu.",
+            "That voice ID was not returned for this ElevenLabs account.",
             file=sys.stderr,
         )
         return 2
 
-    subprocess.run(
-        ["systemctl", "--user", "stop", SERVICE_NAME],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    FISH_S2_VOICE_DIR.mkdir(parents=True, exist_ok=True)
-    pending_id = "notch-voice-pending"
-    pending_path = FISH_S2_VOICE_DIR / f"{pending_id}.s2voice"
-    pending_path.unlink(missing_ok=True)
-    preview_path = FISH_S2_VOICE_DIR / "voice-preview.wav"
-    command = [
-        str(FISH_S2_BINARY),
-        "--model",
-        str(FISH_S2_MODEL_PATH),
-        "--tokenizer",
-        str(FISH_S2_TOKENIZER_PATH),
-        "--prompt-audio",
-        str(reference),
-        "--prompt-text",
-        transcript,
-        "--voice",
-        pending_id,
-        "--voice-dir",
-        str(FISH_S2_VOICE_DIR),
-        "--save-voice",
-        "--text",
-        "Your new voice is ready.",
-        "--output",
-        str(preview_path),
-        "--max-tokens",
-        "128",
-        "--log-level",
-        "warn",
-    ]
-    if backend == "vulkan":
-        command.extend(["--vulkan", "0", "--codec-follow-backend"])
-    elif backend == "cuda":
-        command.extend(["--cuda", "0", "--codec-follow-backend"])
-
-    result = subprocess.run(command)
-    if result.returncode or not pending_path.is_file():
-        print("Fish Audio could not create the voice profile.", file=sys.stderr)
-        return result.returncode or 1
-    os.replace(pending_path, FISH_S2_VOICE_PATH)
-    print(f"Voice updated. Preview: {preview_path}")
+    ElevenLabsSettings(
+        api_key=api_key,
+        voice_id=voice_id,
+        model_id=DEFAULT_MODEL_ID,
+    ).save()
+    print(f"Saved ElevenLabs Flash configuration to {ELEVENLABS_CONFIG_PATH}.")
     return 0
+
+
+def list_voices() -> int:
+    settings = ElevenLabsSettings.load()
+    if not settings.api_key:
+        print(
+            "Run `notch-voice-assistant configure-elevenlabs` first.",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        voices = ElevenLabsSynthesizer.list_voices(settings.api_key)
+    except ElevenLabsUnavailable as error:
+        print(error, file=sys.stderr)
+        return 1
+    _print_voices(voices)
+    return 0
+
+
+def set_voice(voice_id: str) -> int:
+    voice_id = voice_id.strip()
+    if not voice_id or not voice_id.replace("-", "").replace("_", "").isalnum():
+        print("Provide a valid ElevenLabs voice ID.", file=sys.stderr)
+        return 2
+    settings = ElevenLabsSettings.load()
+    settings = ElevenLabsSettings(
+        api_key=settings.api_key,
+        voice_id=voice_id,
+        model_id=settings.model_id,
+    )
+    settings.save()
+    print(f"ElevenLabs voice set to {voice_id}.")
+    return 0
+
+
+def _print_voices(voices: list[dict]) -> None:
+    if not voices:
+        print("No voices were returned for this ElevenLabs account.")
+        return
+    ordered = sorted(
+        voices,
+        key=lambda voice: (
+            str((voice.get("labels") or {}).get("accent", "")).lower()
+            not in {"american", "us"},
+            str(voice.get("name", "")).lower(),
+        ),
+    )
+    print("\nAvailable voices:")
+    for voice in ordered:
+        labels = voice.get("labels") or {}
+        details = " · ".join(
+            value
+            for value in (
+                str(labels.get("accent", "")).strip(),
+                str(labels.get("gender", "")).strip(),
+                str(labels.get("description", "")).strip(),
+            )
+            if value
+        )
+        suffix = f" — {details}" if details else ""
+        print(f"  {voice.get('voice_id', '')}  {voice.get('name', 'Unnamed')}{suffix}")
+    print()
+
+
+def _recommended_voice_id(voices: list[dict], current_voice_id: str) -> str:
+    voice_ids = {
+        str(voice.get("voice_id", "")).strip()
+        for voice in voices
+        if voice.get("voice_id")
+    }
+    if current_voice_id in voice_ids:
+        return current_voice_id
+    for voice in voices:
+        labels = voice.get("labels") or {}
+        if str(labels.get("accent", "")).lower() in {"american", "us"}:
+            return str(voice.get("voice_id", "")).strip()
+    return next(iter(voice_ids), current_voice_id)
 
 
 def daemon() -> int:
@@ -200,13 +239,13 @@ def main(argv: list[str] | None = None) -> int:
             "status",
             "daemon",
             "doctor",
+            "configure-elevenlabs",
+            "voices",
             "set-voice",
-            "reset-voice",
             "quit",
         ],
     )
-    parser.add_argument("voice_audio", nargs="?")
-    parser.add_argument("voice_transcript", nargs="?")
+    parser.add_argument("value", nargs="?")
     arguments = parser.parse_args(argv)
 
     if arguments.command == "status":
@@ -215,12 +254,14 @@ def main(argv: list[str] | None = None) -> int:
         return daemon()
     if arguments.command == "doctor":
         return doctor()
+    if arguments.command == "configure-elevenlabs":
+        return configure_elevenlabs()
+    if arguments.command == "voices":
+        return list_voices()
     if arguments.command == "set-voice":
-        if not arguments.voice_audio or not arguments.voice_transcript:
-            parser.error('set-voice requires <audio> "<exact transcript>"')
-        return set_voice(arguments.voice_audio, arguments.voice_transcript)
-    if arguments.command == "reset-voice":
-        return set_voice(str(FISH_S2_REFERENCE_PATH), REFERENCE_TEXT)
+        if not arguments.value:
+            parser.error("set-voice requires <voice-id>")
+        return set_voice(arguments.value)
     return send_command(arguments.command, start_service=arguments.command != "quit")
 
 

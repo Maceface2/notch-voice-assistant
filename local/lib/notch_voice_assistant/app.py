@@ -295,7 +295,6 @@ class VoiceAssistantApplication:
         self.animation_generation += 1
         animation_generation = self.animation_generation
         self.loop_active = True
-        self.speech.prewarm_tts_in_background()
         self.continue_button.hide()
         self.revealer.set_reveal_child(False)
         self.window.show_all()
@@ -560,7 +559,6 @@ class VoiceAssistantApplication:
             and not self.revealer.get_reveal_child()
         ):
             self.window.hide()
-            self.speech.release_tts_in_background()
             self._write_status()
         return False
 

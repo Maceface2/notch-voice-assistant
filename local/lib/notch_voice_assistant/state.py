@@ -14,6 +14,7 @@ from typing import Any
 APP_NAME = "notch-voice-assistant"
 HOME_DIR = Path.home()
 CONFIG_ROOT = Path(os.environ.get("XDG_CONFIG_HOME", HOME_DIR / ".config"))
+CONFIG_DIR = CONFIG_ROOT / APP_NAME
 RUNTIME_ROOT = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
 RUNTIME_DIR = RUNTIME_ROOT / APP_NAME
 SOCKET_PATH = RUNTIME_DIR / "control.sock"
@@ -23,18 +24,10 @@ SESSION_PATH = STATE_DIR / "session.json"
 DATA_DIR = Path(os.environ.get("XDG_DATA_HOME", HOME_DIR / ".local/share")) / APP_NAME
 MODELS_DIR = DATA_DIR / "models"
 VENV_DIR = DATA_DIR / "venv"
-FISH_S2_DIR = DATA_DIR / "fish-s2"
-FISH_S2_BINARY = FISH_S2_DIR / "bin/s2"
-FISH_S2_MODEL_DIR = MODELS_DIR / "fish-s2"
-FISH_S2_MODEL_PATH = FISH_S2_MODEL_DIR / "s2-pro-q4_k_m.gguf"
-FISH_S2_TOKENIZER_PATH = FISH_S2_MODEL_DIR / "tokenizer.json"
-FISH_S2_REFERENCE_PATH = FISH_S2_DIR / "american-reference.wav"
-FISH_S2_VOICE_DIR = FISH_S2_DIR / "voices"
-FISH_S2_VOICE_PATH = FISH_S2_VOICE_DIR / "notch-voice.s2voice"
-FISH_S2_READY_PATH = DATA_DIR / "fish-s2-ready.json"
-STYLE_PATH = CONFIG_ROOT / APP_NAME / "style.css"
-ICON_PATH = CONFIG_ROOT / APP_NAME / "claude.png"
-WHISPER_DEVICE_PATH = CONFIG_ROOT / APP_NAME / "whisper-device"
+ELEVENLABS_CONFIG_PATH = CONFIG_DIR / "elevenlabs.json"
+STYLE_PATH = CONFIG_DIR / "style.css"
+ICON_PATH = CONFIG_DIR / "claude.png"
+WHISPER_DEVICE_PATH = CONFIG_DIR / "whisper-device"
 CLAUDE_BIN = Path(
     os.environ.get(
         "NOTCH_VOICE_CLAUDE_BIN",

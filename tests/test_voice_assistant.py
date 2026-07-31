@@ -20,7 +20,12 @@ from notch_voice_assistant.claude import (  # noqa: E402
 )
 from notch_voice_assistant.audio import SpeechServices  # noqa: E402
 from notch_voice_assistant.cli import set_voice  # noqa: E402
-from notch_voice_assistant.fish_s2 import FishS2Synthesizer  # noqa: E402
+from notch_voice_assistant.elevenlabs import (  # noqa: E402
+    DEFAULT_MODEL_ID,
+    DEFAULT_OUTPUT_FORMAT,
+    ElevenLabsSettings,
+    ElevenLabsSynthesizer,
+)
 from notch_voice_assistant.state import (  # noqa: E402
     AssistantState,
     HOME_DIR,
@@ -89,33 +94,63 @@ class StatusTests(unittest.TestCase):
 
 
 class SpeechServiceTests(unittest.TestCase):
-    def test_fish_s2_multipart_contains_text_and_reference_audio(self) -> None:
-        body, content_type = FishS2Synthesizer._multipart_body(
-            {"text": "Hello"},
-            {"reference": ("voice.wav", "audio/wav", b"RIFFtest")},
+    def test_elevenlabs_stream_uses_flash_and_low_latency_mp3(self) -> None:
+        response = mock.MagicMock()
+        response.__enter__.return_value = response
+        response.read.side_effect = [b"ID3", b"audio", b""]
+        settings = ElevenLabsSettings(
+            api_key="test-key",
+            voice_id="voice-123",
+            model_id=DEFAULT_MODEL_ID,
         )
-        self.assertTrue(content_type.startswith("multipart/form-data; boundary="))
-        self.assertIn(b'name="text"', body)
-        self.assertIn(b"Hello", body)
-        self.assertIn(b'filename="voice.wav"', body)
-        self.assertIn(b"RIFFtest", body)
-
-    def test_fish_s2_streaming_uses_pcm_and_gpu_codec(self) -> None:
-        with mock.patch.dict(
-            os.environ,
-            {"NOTCH_VOICE_FISH_S2_BACKEND": "vulkan"},
+        chunks: list[bytes] = []
+        with (
+            mock.patch.object(ElevenLabsSettings, "load", return_value=settings),
+            mock.patch(
+                "notch_voice_assistant.elevenlabs.urllib.request.urlopen",
+                return_value=response,
+            ) as urlopen,
         ):
-            params = FishS2Synthesizer._generation_params(streaming=True)
-        self.assertTrue(params["chunked"])
-        self.assertEqual(params["output_format"], "pcm_s16le")
-        self.assertTrue(params["codec_follow_backend"])
-        self.assertFalse(params["codec_auto_backend"])
+            ElevenLabsSynthesizer().stream_mp3("Hello", chunks.append)
 
-    def test_set_voice_rejects_a_missing_reference(self) -> None:
-        self.assertEqual(
-            set_voice("/definitely/missing/reference.wav", "Exact transcript."),
-            2,
-        )
+        request = urlopen.call_args.args[0]
+        payload = json.loads(request.data)
+        self.assertIn(f"output_format={DEFAULT_OUTPUT_FORMAT}", request.full_url)
+        self.assertIn("/voice-123/stream", request.full_url)
+        self.assertEqual(payload["model_id"], "eleven_flash_v2_5")
+        self.assertEqual(payload["language_code"], "en")
+        self.assertEqual(chunks, [b"ID3", b"audio"])
+
+    def test_elevenlabs_config_environment_overrides_saved_values(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch(
+                "notch_voice_assistant.elevenlabs.ELEVENLABS_CONFIG_PATH",
+                Path(directory) / "elevenlabs.json",
+            ),
+            mock.patch.dict(
+                os.environ,
+                {
+                    "ELEVENLABS_API_KEY": "environment-key",
+                    "ELEVENLABS_VOICE_ID": "environment-voice",
+                },
+            ),
+        ):
+            settings = ElevenLabsSettings.load()
+        self.assertEqual(settings.api_key, "environment-key")
+        self.assertEqual(settings.voice_id, "environment-voice")
+
+    def test_set_voice_saves_an_elevenlabs_voice_id(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch(
+                "notch_voice_assistant.elevenlabs.ELEVENLABS_CONFIG_PATH",
+                Path(directory) / "elevenlabs.json",
+            ),
+        ):
+            self.assertEqual(set_voice("voice_123"), 0)
+            settings = ElevenLabsSettings.load()
+        self.assertEqual(settings.voice_id, "voice_123")
 
     def test_whisper_device_can_be_forced_with_environment(self) -> None:
         with mock.patch.dict(os.environ, {"NOTCH_VOICE_WHISPER_DEVICE": "cpu"}):
