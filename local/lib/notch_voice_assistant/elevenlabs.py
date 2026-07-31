@@ -15,6 +15,9 @@ from .state import ELEVENLABS_CONFIG_PATH, atomic_json_write
 DEFAULT_VOICE_ID = "cgSgspJ2msm6clMCkdW9"
 DEFAULT_MODEL_ID = "eleven_flash_v2_5"
 DEFAULT_OUTPUT_FORMAT = "mp3_44100_128"
+DEFAULT_SPEED = 1.15
+MINIMUM_SPEED = 0.7
+MAXIMUM_SPEED = 1.2
 API_ROOT = "https://api.elevenlabs.io"
 
 
@@ -31,6 +34,7 @@ class ElevenLabsSettings:
     api_key: str
     voice_id: str = DEFAULT_VOICE_ID
     model_id: str = DEFAULT_MODEL_ID
+    speed: float = DEFAULT_SPEED
 
     @classmethod
     def load(cls) -> "ElevenLabsSettings":
@@ -54,10 +58,21 @@ class ElevenLabsSettings:
             "ELEVENLABS_MODEL_ID",
             str(saved.get("model_id", DEFAULT_MODEL_ID)),
         ).strip()
+        raw_speed = os.environ.get(
+            "ELEVENLABS_SPEED",
+            str(saved.get("speed", DEFAULT_SPEED)),
+        ).strip()
+        try:
+            speed = float(raw_speed)
+        except ValueError:
+            speed = DEFAULT_SPEED
+        if not MINIMUM_SPEED <= speed <= MAXIMUM_SPEED:
+            speed = DEFAULT_SPEED
         return cls(
             api_key=api_key,
             voice_id=voice_id or DEFAULT_VOICE_ID,
             model_id=model_id or DEFAULT_MODEL_ID,
+            speed=speed,
         )
 
     def save(self) -> None:
@@ -67,6 +82,7 @@ class ElevenLabsSettings:
                 "api_key": self.api_key,
                 "voice_id": self.voice_id,
                 "model_id": self.model_id,
+                "speed": self.speed,
             },
             mode=0o600,
         )
@@ -99,7 +115,7 @@ class ElevenLabsSynthesizer:
                         "similarity_boost": 0.75,
                         "style": 0.0,
                         "use_speaker_boost": True,
-                        "speed": 1.0,
+                        "speed": settings.speed,
                     },
                 },
                 separators=(",", ":"),

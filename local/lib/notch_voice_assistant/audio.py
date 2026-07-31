@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import threading
 from collections import deque
@@ -22,6 +23,19 @@ FRAME_BYTES = SAMPLE_RATE * FRAME_MS // 1000 * 2
 PREROLL_FRAMES = 15
 SILENCE_FRAMES = 50
 MAX_CAPTURE_FRAMES = 6_000
+MINIMUM_VOICED_FRAMES = 15
+COMMON_SILENCE_HALLUCINATIONS = {
+    "thank you",
+    "thank you for watching",
+    "thanks for watching",
+    "please subscribe",
+}
+WHISPER_VAD_PARAMETERS = {
+    "threshold": 0.65,
+    "min_speech_duration_ms": 300,
+    "min_silence_duration_ms": 350,
+    "speech_pad_ms": 120,
+}
 
 
 class AudioUnavailable(RuntimeError):
@@ -36,7 +50,7 @@ class VoiceRecorder:
         on_complete: Callable[[bytes], None],
         on_error: Callable[[str], None],
         *,
-        vad_aggressiveness: int = 2,
+        vad_aggressiveness: int = 3,
     ) -> None:
         try:
             import gi
@@ -60,6 +74,7 @@ class VoiceRecorder:
         self.recent_voiced: deque[bool] = deque(maxlen=10)
         self.captured: list[bytes] = []
         self.speech_started = False
+        self.voiced_frame_count = 0
         self.silence_count = 0
         self.finished = False
         self._lock = threading.Lock()
@@ -132,13 +147,16 @@ class VoiceRecorder:
             if not self.speech_started:
                 self.preroll.append(frame)
                 self.recent_voiced.append(voiced)
-                if sum(self.recent_voiced) >= 3:
+                if sum(self.recent_voiced) >= 5:
                     self.speech_started = True
+                    self.voiced_frame_count = sum(self.recent_voiced)
                     self.captured.extend(self.preroll)
                     self.preroll.clear()
                 return
 
             self.captured.append(frame)
+            if voiced:
+                self.voiced_frame_count += 1
             self.silence_count = 0 if voiced else self.silence_count + 1
             should_finish = (
                 self.silence_count >= SILENCE_FRAMES
@@ -161,7 +179,13 @@ class VoiceRecorder:
             if self.finished:
                 return
             self.finished = True
-            captured = b"".join(self.captured) if submit and self.speech_started else b""
+            captured = (
+                b"".join(self.captured)
+                if submit
+                and self.speech_started
+                and self.voiced_frame_count >= MINIMUM_VOICED_FRAMES
+                else b""
+            )
         if self.pipeline is not None:
             self.pipeline.set_state(self.Gst.State.NULL)
             self.pipeline = None
@@ -236,7 +260,8 @@ class SpeechServices:
                 audio,
                 language="en",
                 beam_size=5,
-                vad_filter=False,
+                vad_filter=True,
+                vad_parameters=WHISPER_VAD_PARAMETERS,
                 condition_on_previous_text=False,
             )
             segments = list(segments)
@@ -249,10 +274,28 @@ class SpeechServices:
                 audio,
                 language="en",
                 beam_size=5,
-                vad_filter=False,
+                vad_filter=True,
+                vad_parameters=WHISPER_VAD_PARAMETERS,
                 condition_on_previous_text=False,
             )
-        return " ".join(segment.text.strip() for segment in segments).strip()
+            segments = list(segments)
+        return self._segments_to_text(segments)
+
+    @staticmethod
+    def _segments_to_text(segments: list[object]) -> str:
+        text = " ".join(
+            str(getattr(segment, "text", "")).strip()
+            for segment in segments
+        ).strip()
+        normalized = re.sub(r"[^a-z ]", "", text.lower()).strip()
+        if normalized in COMMON_SILENCE_HALLUCINATIONS and segments:
+            mean_no_speech = sum(
+                float(getattr(segment, "no_speech_prob", 0.0))
+                for segment in segments
+            ) / len(segments)
+            if mean_no_speech >= 0.35:
+                return ""
+        return text
 
     def speak(self, text: str) -> str | None:
         if not text:

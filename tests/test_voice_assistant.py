@@ -20,7 +20,7 @@ from notch_voice_assistant.claude import (  # noqa: E402
     sanitize_for_speech,
 )
 from notch_voice_assistant.audio import SpeechServices  # noqa: E402
-from notch_voice_assistant.cli import set_voice  # noqa: E402
+from notch_voice_assistant.cli import set_speed, set_voice  # noqa: E402
 from notch_voice_assistant.elevenlabs import (  # noqa: E402
     DEFAULT_MODEL_ID,
     DEFAULT_OUTPUT_FORMAT,
@@ -129,6 +129,7 @@ class SpeechServiceTests(unittest.TestCase):
         self.assertIn("/voice-123/stream", request.full_url)
         self.assertEqual(payload["model_id"], "eleven_flash_v2_5")
         self.assertEqual(payload["language_code"], "en")
+        self.assertEqual(payload["voice_settings"]["speed"], 1.15)
         self.assertEqual(chunks, [b"ID3", b"audio"])
 
     def test_elevenlabs_config_environment_overrides_saved_values(self) -> None:
@@ -143,12 +144,14 @@ class SpeechServiceTests(unittest.TestCase):
                 {
                     "ELEVENLABS_API_KEY": "environment-key",
                     "ELEVENLABS_VOICE_ID": "environment-voice",
+                    "ELEVENLABS_SPEED": "1.1",
                 },
             ),
         ):
             settings = ElevenLabsSettings.load()
         self.assertEqual(settings.api_key, "environment-key")
         self.assertEqual(settings.voice_id, "environment-voice")
+        self.assertEqual(settings.speed, 1.1)
 
     def test_set_voice_saves_an_elevenlabs_voice_id(self) -> None:
         with (
@@ -162,9 +165,39 @@ class SpeechServiceTests(unittest.TestCase):
             settings = ElevenLabsSettings.load()
         self.assertEqual(settings.voice_id, "voice_123")
 
+    def test_set_speed_validates_and_saves_supported_value(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch(
+                "notch_voice_assistant.elevenlabs.ELEVENLABS_CONFIG_PATH",
+                Path(directory) / "elevenlabs.json",
+            ),
+        ):
+            self.assertEqual(set_speed("1.15"), 0)
+            settings = ElevenLabsSettings.load()
+            self.assertEqual(set_speed("1.25"), 2)
+        self.assertEqual(settings.speed, 1.15)
+
     def test_whisper_device_can_be_forced_with_environment(self) -> None:
         with mock.patch.dict(os.environ, {"NOTCH_VOICE_WHISPER_DEVICE": "cpu"}):
             self.assertEqual(SpeechServices._read_whisper_device_preference(), "cpu")
+
+    def test_rejects_thank_you_silence_hallucination(self) -> None:
+        class Segment:
+            text = "Thank you."
+            no_speech_prob = 0.82
+
+        self.assertEqual(SpeechServices._segments_to_text([Segment()]), "")
+
+    def test_keeps_confident_thank_you_transcription(self) -> None:
+        class Segment:
+            text = "Thank you."
+            no_speech_prob = 0.05
+
+        self.assertEqual(
+            SpeechServices._segments_to_text([Segment()]),
+            "Thank you.",
+        )
 
     def test_cuda_inference_failure_retries_on_cpu(self) -> None:
         class FailingCudaModel:

@@ -23,6 +23,7 @@ generation.
 
 - Animated full-width notch expansion with filled rounded-corner seams
 - Voice activity detection and automatic end-of-utterance detection
+- Layered WebRTC and Silero VAD with low-confidence filler rejection
 - CUDA `distil-large-v3` transcription with a CPU `small.en` fallback
 - Persistent Claude Code sessions with Sonnet and Opus selection
 - ElevenLabs Flash v2.5 streaming for low first-audio latency
@@ -48,6 +49,7 @@ List voices or switch later:
 ```sh
 notch-voice-assistant voices
 notch-voice-assistant set-voice VOICE_ID
+notch-voice-assistant set-speed 1.15
 ```
 
 The defaults are the `eleven_flash_v2_5` low-latency model and 44.1 kHz,
@@ -59,6 +61,7 @@ can override saved settings:
 ELEVENLABS_API_KEY=... \
 ELEVENLABS_VOICE_ID=... \
 ELEVENLABS_MODEL_ID=eleven_flash_v2_5 \
+ELEVENLABS_SPEED=1.15 \
 notch-voice-assistant daemon
 ```
 

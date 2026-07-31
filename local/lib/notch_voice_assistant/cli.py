@@ -13,6 +13,8 @@ from pathlib import Path
 
 from .elevenlabs import (
     DEFAULT_MODEL_ID,
+    MAXIMUM_SPEED,
+    MINIMUM_SPEED,
     ElevenLabsSettings,
     ElevenLabsSynthesizer,
     ElevenLabsUnavailable,
@@ -137,6 +139,7 @@ def configure_elevenlabs() -> int:
         api_key=api_key,
         voice_id=voice_id,
         model_id=DEFAULT_MODEL_ID,
+        speed=current.speed,
     ).save()
     print(f"Saved ElevenLabs Flash configuration to {ELEVENLABS_CONFIG_PATH}.")
     return 0
@@ -169,9 +172,30 @@ def set_voice(voice_id: str) -> int:
         api_key=settings.api_key,
         voice_id=voice_id,
         model_id=settings.model_id,
+        speed=settings.speed,
     )
     settings.save()
     print(f"ElevenLabs voice set to {voice_id}.")
+    return 0
+
+
+def set_speed(raw_speed: str) -> int:
+    try:
+        speed = float(raw_speed)
+    except ValueError:
+        print("Speaking speed must be a number from 0.7 to 1.2.", file=sys.stderr)
+        return 2
+    if not MINIMUM_SPEED <= speed <= MAXIMUM_SPEED:
+        print("Speaking speed must be from 0.7 to 1.2.", file=sys.stderr)
+        return 2
+    settings = ElevenLabsSettings.load()
+    ElevenLabsSettings(
+        api_key=settings.api_key,
+        voice_id=settings.voice_id,
+        model_id=settings.model_id,
+        speed=speed,
+    ).save()
+    print(f"ElevenLabs speaking speed set to {speed:.2f}x.")
     return 0
 
 
@@ -242,6 +266,7 @@ def main(argv: list[str] | None = None) -> int:
             "configure-elevenlabs",
             "voices",
             "set-voice",
+            "set-speed",
             "quit",
         ],
     )
@@ -262,6 +287,10 @@ def main(argv: list[str] | None = None) -> int:
         if not arguments.value:
             parser.error("set-voice requires <voice-id>")
         return set_voice(arguments.value)
+    if arguments.command == "set-speed":
+        if not arguments.value:
+            parser.error("set-speed requires <0.7-1.2>")
+        return set_speed(arguments.value)
     return send_command(arguments.command, start_service=arguments.command != "quit")
 
 
